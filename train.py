@@ -1,0 +1,278 @@
+from pyexpat import model
+import random
+import torch as pt
+import numpy as np
+from torch.nn.modules import pooling
+from tqdm import tqdm, trange
+from src.model import DFTVAE
+from src.training.utils import (
+    make_data_loader,
+    get_optimizer,
+    count_parameters,
+    vae_loss,
+)
+from src.training.train_module import fit
+import torch.nn as nn
+import argparse
+
+
+# parser arguments
+
+parser = argparse.ArgumentParser()
+# subparsers = parser.add_subparsers(
+#     help="model settings (model), hyperparameters (hparam) and model checkpoint (checkpoint)"
+# )
+# model_parser = subparsers.add_parser("model")
+# model_parser.set_defaults(function="model")
+
+parser.add_argument(
+    "--generative", type=str, help="if the model is generative or not (default=True)"
+)
+
+parser.add_argument(
+    "--input_channel", type=int, help="# input channels (default=1)", default=1
+)
+parser.add_argument(
+    "--input_size",
+    type=int,
+    help="number of features of the input (default=256)",
+    default=256,
+)
+
+parser.add_argument(
+    "--latent_dimension",
+    type=int,
+    help="number of features of the input (default=16)",
+    default=16,
+)
+
+parser.add_argument(
+    "--hidden_channels",
+    type=int,
+    help="list of hidden channels (default=120)",
+    default=120,
+)
+
+parser.add_argument(
+    "--pooling_size",
+    type=int,
+    help="pooling size in the Avg Pooling (default=2)",
+    default=2,
+)
+
+parser.add_argument(
+    "--padding",
+    type=int,
+    help="padding dimension (default=2)",
+    default=6,
+)
+
+
+parser.add_argument(
+    "--ks",
+    type=int,
+    help="kernel size (default=13)",
+    default=13,
+)
+
+parser.add_argument(
+    "--padding_mode",
+    type=str,
+    help="the padding mode of the model (default='circular')",
+    default="circular",
+)
+
+parser.add_argument(
+    "--model_name",
+    type=str,
+    help="name of the model (default='emodel_2_layer')",
+    default="emodel",
+)
+
+
+# checkpoint_parser = subparsers.add_parser("checkpoint")
+# checkpoint_parser.set_defaults(function="checkpoint")
+
+parser.add_argument("--load", type=bool, help="Loading or not the model", default=False)
+parser.add_argument("--name", type=str, help="name of the model", default=None)
+
+# hparam_parser = subparsers.add_parser("hparams")
+# hparam_parser.set_defaults(function="hparam_parser")
+
+parser.add_argument(
+    "--seed",
+    type=int,
+    help="seed for pytorch and numpy (default=42)",
+    default=42,
+)
+
+parser.add_argument(
+    "--data_path",
+    type=str,
+    help="seed for pytorch and numpy (default=data/final_dataset/data_train.npz)",
+    default="data/final_dataset/data_train.npz",
+)
+
+parser.add_argument(
+    "--num_threads",
+    type=int,
+    help="the number of threads for pytorch (default=1)",
+    default=1,
+)
+
+parser.add_argument(
+    "--device",
+    type=str,
+    help="the threshold difference for the early stopping (default=device available)",
+    default=pt.device("cuda" if pt.cuda.is_available() else "cpu"),
+)
+
+parser.add_argument(
+    "--epochs",
+    type=int,
+    help="training epochs (default=800)",
+    default=1200,
+)
+
+
+parser.add_argument(
+    "--lr",
+    type=float,
+    help="learning rate (default=0.0001)",
+    default=0.0001,
+)
+
+parser.add_argument(
+    "--bs",
+    type=int,
+    help="batch size (default=100)",
+    default=100,
+)
+
+parser.add_argument(
+    "--patiance",
+    type=int,
+    help="num of epochs tollerance for the early stopping (default=5)",
+    default=5,
+)
+
+parser.add_argument(
+    "--early_stopping",
+    type=float,
+    help="the threshold difference for the early stopping (default=10**-4)",
+    default=10 ** -4,
+)
+
+
+def main(args):
+
+    # hyperparameters
+
+    device = args.device
+    input_channel = args.input_channel
+    input_size = args.input_size
+
+    # 256 for model test, 30 for the others
+    hc = args.hidden_channels
+    output_size = 1
+    pooling_size = args.pooling_size
+
+    padding = args.padding  # 6
+    padding_mode = args.padding_mode
+
+    kernel_size = args.ks  # 13
+
+    # Select the number of threads
+    pt.set_num_threads(args.num_threads)
+
+    # Initialize the seed
+    pt.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    random.seed(args.seed)
+
+    pt.cuda.manual_seed(args.seed)
+    pt.backends.cudnn.deterministic = (
+        True  # Note that this Deterministic mode can have a performance impact
+    )
+    pt.backends.cudnn.benchmark = False
+
+    # Set hyperparameters
+    epochs = args.epochs
+    lr = args.lr
+    bs = args.bs
+    patiance = args.patiance
+    early_stopping = args.early_stopping
+
+    model_name = args.model_name
+
+    name_hc = f"_{hc}_hc"
+    name_ks = f"_{kernel_size}_ks"
+    name_pooling_size = f"_{pooling_size}_ps"
+    model_name = model_name + name_hc + name_ks + name_pooling_size
+
+    file_name = args.data_path
+
+    loss_func = vae_loss
+
+    if args.load:
+
+        print(f"loading the model {args.name}")
+        history_valid = pt.load(f"losses_dft_pytorch/{args.name}" + "_loss_valid")
+        history_train = pt.load(f"losses_dft_pytorch/{args.name}" + "_loss_train")
+
+        print(len(history_train), len(history_valid))
+        model = pt.load(f"model_dft_pytorch/{args.name}")
+        model_name = args.name
+    else:
+
+        history_valid = []
+        history_train = []
+
+        model = DFTVAE(
+            input_size=input_size,
+            latent_dimension=args.latent_dimension,
+            input_channels=input_channel,
+            hidden_channels=hc,
+            kernel_size=kernel_size,
+            padding=padding,
+            padding_mode=padding_mode,
+            pooling_size=pooling_size,
+            output_size=output_size,
+        )
+
+    model = model.to(pt.double)
+    model = model.to(device=device)
+
+    print(model)
+
+    print(count_parameters(model))
+
+    train_dl, valid_dl = make_data_loader(
+        file_name=file_name, bs=bs, split=0.8, pbc=False, generative=args.generative
+    )
+
+    opt = get_optimizer(lr=lr, model=model)
+
+    fit(
+        model=model,
+        train_dl=train_dl,
+        opt=opt,
+        epochs=epochs,
+        valid_dl=valid_dl,
+        checkpoint=True,
+        name_checkpoint=model_name,
+        history_train=history_train,
+        history_valid=history_valid,
+        loss_func=loss_func,
+        patiance=patiance,
+        early_stopping=early_stopping,
+    )
+
+    print(model)
+
+
+if __name__ == "__main__":
+
+    args = parser.parse_args()
+
+    main(args)
