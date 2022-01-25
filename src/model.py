@@ -3,6 +3,7 @@ from typing import Dict, Tuple
 from black import out
 import torch
 import torch.nn as nn
+from zmq import device
 
 
 class Encode(nn.Module):
@@ -10,7 +11,7 @@ class Encode(nn.Module):
         self,
         input_channels: int,
         input_size: int,
-        hidden_channel: int,
+        hidden_channels: int,
         latent_dimension: int,
         padding: int,
         padding_mode: str,
@@ -24,47 +25,49 @@ class Encode(nn.Module):
             # nn.BatchNorm1d(input_channels),
             nn.Conv1d(
                 in_channels=input_channels,
-                out_channels=hidden_channel,
+                out_channels=hidden_channels,
                 kernel_size=kernel_size,
                 padding=padding,
                 padding_mode="circular",
             ),
             nn.ReLU(),
             nn.AvgPool1d(kernel_size=pooling_size),
-            nn.BatchNorm1d(hidden_channel),
+            nn.BatchNorm1d(hidden_channels),
         )
         self.block_2 = nn.Sequential(
             nn.Conv1d(
-                in_channels=hidden_channel,
-                out_channels=hidden_channel,
+                in_channels=hidden_channels,
+                out_channels=hidden_channels,
                 kernel_size=kernel_size,
                 padding=padding,
                 padding_mode="circular",
             ),
             nn.ReLU(),
             nn.AvgPool1d(kernel_size=pooling_size),
-            nn.BatchNorm1d(hidden_channel),
+            nn.BatchNorm1d(hidden_channels),
         )
         self.block_3 = nn.Sequential(
             nn.Conv1d(
-                in_channels=hidden_channel,
-                out_channels=hidden_channel,
+                in_channels=hidden_channels,
+                out_channels=hidden_channels,
                 kernel_size=kernel_size,
                 padding=padding,
                 padding_mode="circular",
             ),
             nn.ReLU(),
             nn.AvgPool1d(kernel_size=pooling_size),
-            nn.BatchNorm1d(hidden_channel),
+            nn.BatchNorm1d(hidden_channels),
         )
         self.final_mu = nn.Sequential(
             nn.Linear(
-                hidden_channel * int(input_size / (pooling_size ** 3)), latent_dimension
+                hidden_channels * int(input_size / (pooling_size ** 3)),
+                latent_dimension,
             ),
         )
         self.final_logsigma = nn.Sequential(
             nn.Linear(
-                hidden_channel * int(input_size / (pooling_size ** 3)), latent_dimension
+                hidden_channels * int(input_size / (pooling_size ** 3)),
+                latent_dimension,
             ),
         )
 
@@ -83,7 +86,7 @@ class Decode(nn.Module):
     def __init__(
         self,
         latent_dimension: int,
-        hidden_channel: int,
+        hidden_channels: int,
         output_channels: int,
         output_size: int,
         padding: int,
@@ -92,49 +95,56 @@ class Decode(nn.Module):
         pooling_size: int,
     ):
         super().__init__()
+
+        self.output_size = output_size
+        self.pooling_size = pooling_size
+
         self.recon_block = nn.Sequential(
             nn.Linear(
                 latent_dimension,
-                int(output_size / (pooling_size) ** 3) * hidden_channel,
+                int(output_size / (pooling_size) ** 3) * hidden_channels,
             ),
         )
         self.block_conv1 = nn.Sequential(
             nn.ConvTranspose1d(
-                in_channels=hidden_channel,
-                out_channels=hidden_channel,
+                in_channels=hidden_channels,
+                out_channels=hidden_channels,
                 kernel_size=kernel_size + 1,
                 stride=2,
                 padding=padding,
             ),
             nn.ReLU(),
-            nn.BatchNorm1d(hidden_channel),
+            nn.BatchNorm1d(hidden_channels),
         )
         self.block_conv2 = nn.Sequential(
             nn.ConvTranspose1d(
-                in_channels=hidden_channel,
-                out_channels=hidden_channel,
+                in_channels=hidden_channels,
+                out_channels=hidden_channels,
                 kernel_size=kernel_size + 1,
                 stride=2,
                 padding=padding,
             ),
             nn.ReLU(),
-            nn.BatchNorm1d(hidden_channel),
+            nn.BatchNorm1d(hidden_channels),
         )
         self.block_conv3 = nn.Sequential(
             nn.ConvTranspose1d(
-                in_channels=hidden_channel,
+                in_channels=hidden_channels,
                 out_channels=output_channels,
-                kernel_size=kernel_size,
+                kernel_size=kernel_size + 1,
                 stride=2,
                 padding=padding,
             ),
         )
-        self.hidden_channel = hidden_channel
+        self.hidden_channel = hidden_channels
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
         z = self.recon_block(z)
-        z = z.view(z.shape[0], self.hidden_channel, -1)
+        z = z.view(
+            -1, self.hidden_channel, int(self.output_size / (self.pooling_size ** 3))
+        )
         z = self.block_conv1(z)
+        z = self.block_conv2(z)
         z = self.block_conv3(z)
         z = torch.sigmoid(z)
         return z
@@ -261,7 +271,7 @@ class Pilati_model_3_layer(nn.Module):
         return x
 
 
-class DFTVAE(Encode, Decode, Pilati_model_3_layer):
+class DFTVAE(nn.Module):
     def __init__(
         self,
         latent_dimension: int,
@@ -274,7 +284,7 @@ class DFTVAE(Encode, Decode, Pilati_model_3_layer):
         pooling_size: int,
         loss_generative: nn.Module,
         loss_dft: nn.Module,
-        output_size:int
+        output_size: int,
     ):
 
         super().__init__()
@@ -284,7 +294,7 @@ class DFTVAE(Encode, Decode, Pilati_model_3_layer):
 
         self.Encoder = Encode(
             latent_dimension=latent_dimension,
-            hidden_channel=hidden_channels,
+            hidden_channels=hidden_channels,
             input_channels=input_channels,
             padding=padding,
             padding_mode=padding_mode,
@@ -294,12 +304,12 @@ class DFTVAE(Encode, Decode, Pilati_model_3_layer):
         )
         self.Decoder = Decode(
             latent_dimension=latent_dimension,
-            hidden_channel=hidden_channels,
-            input_channels=input_channels,
+            hidden_channels=hidden_channels,
+            output_channels=input_channels,
             padding=padding,
             padding_mode=padding_mode,
             kernel_size=kernel_size,
-            input_size=input_size,
+            output_size=input_size,
             pooling_size=pooling_size,
         )
         self.DFTModel = Pilati_model_3_layer(
@@ -310,7 +320,7 @@ class DFTVAE(Encode, Decode, Pilati_model_3_layer):
             padding_mode=padding_mode,
             kernel_size=kernel_size,
             pooling_size=pooling_size,
-            output_size=output_size
+            output_size=output_size,
         )
 
     def forward(self, z: torch.Tensor):
@@ -339,18 +349,19 @@ class DFTVAE(Encode, Decode, Pilati_model_3_layer):
         else:
             return mu
 
-    def train_generative_step(self, batch: Tuple):
-        x = batch
-        x = x.unsqueeze(1)
+    def train_generative_step(self, batch: Tuple, device: str):
+        x = batch[0]
+        x = x.unsqueeze(1).to(device=device)
         latent_mu, latent_logvar = self.Encoder(x)
-        latent = self.latent_sample(latent_mu, latent_logvar)
+        latent = self._latent_sample(latent_mu, latent_logvar)
         x_recon = self.Decoder(latent)
         loss = self.loss_generative(x_recon, x, latent_mu, latent_logvar)
         return loss
 
-    def fit_dft_step(self, batch: Tuple):
+    def fit_dft_step(self, batch: Tuple, device: str):
         x, y = batch
-        x = x.unsqueeze(1)
+        x = x.unsqueeze(1).to(device=device)
+        y = y.to(device=device)
         x = self.DFTModel(x)
         loss = self.loss_dft(x, y)
         return loss
@@ -364,7 +375,30 @@ class DFTVAE(Encode, Decode, Pilati_model_3_layer):
 
         return r_value
 
-    def r_square(self, batch: Tuple):
+    def r_square(self, batch: Tuple, device):
         x, target = batch
+        x = x.to(device=device)
+        target = x.to(device=device)
         output = self.functional(x)
         return self._r_value(output, target)
+
+
+class Energy(nn.Module):
+    def __init__(self, F_universal: nn.Module, v: torch.Tensor, dx: float):
+        super().__init__()
+        self.model = F_universal
+        self.v = v
+        self.dx = dx
+
+    def forward(self, z: torch.Tensor):
+        """Value of the Energy function given the potential
+
+        Returns:
+            [pt.tensor]: [The energy values of the different samples. shape=(n_istances)]
+        """
+        # self.Func.eval()
+        x, eng_1 = self.model(z)
+        eng_1 = eng_1.view(x.shape[0])
+        eng_2 = torch.einsum("ai,i->a", x, self.v) * self.dx
+        # eng_2 = pt.trapezoid(eng_2, dx=self.dx, dim=1)
+        return eng_1 + eng_2, x

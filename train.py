@@ -26,7 +26,10 @@ parser = argparse.ArgumentParser()
 # model_parser.set_defaults(function="model")
 
 parser.add_argument(
-    "--generative", type=str, help="if the model is generative or not (default=True)"
+    "--generative",
+    type=str,
+    help="if the model is generative or not (default=True)",
+    default=True,
 )
 
 parser.add_argument(
@@ -50,7 +53,7 @@ parser.add_argument(
     "--hidden_channels",
     type=int,
     help="list of hidden channels (default=120)",
-    default=120,
+    default=20,
 )
 
 parser.add_argument(
@@ -217,8 +220,20 @@ def main(args):
     if args.load:
 
         print(f"loading the model {args.name}")
-        history_valid = pt.load(f"losses_dft_pytorch/{args.name}" + "_loss_valid")
-        history_train = pt.load(f"losses_dft_pytorch/{args.name}" + "_loss_train")
+        if args.generative:
+            history_valid = pt.load(
+                f"losses_dft_pytorch/{args.name}" + "_loss_valid_generative"
+            )
+            history_train = pt.load(
+                f"losses_dft_pytorch/{args.name}" + "_loss_train_generative"
+            )
+        else:
+            history_valid = pt.load(
+                f"losses_dft_pytorch/{args.name}" + "_loss_valid_dft"
+            )
+            history_train = pt.load(
+                f"losses_dft_pytorch/{args.name}" + "_loss_train_dft"
+            )
 
         print(len(history_train), len(history_valid))
         model = pt.load(f"model_dft_pytorch/{args.name}")
@@ -231,6 +246,8 @@ def main(args):
         model = DFTVAE(
             input_size=input_size,
             latent_dimension=args.latent_dimension,
+            loss_generative=loss_func,
+            loss_dft=None,
             input_channels=input_channel,
             hidden_channels=hc,
             kernel_size=kernel_size,
@@ -248,12 +265,13 @@ def main(args):
     print(count_parameters(model))
 
     train_dl, valid_dl = make_data_loader(
-        file_name=file_name, bs=bs, split=0.8, pbc=False, generative=args.generative
+        file_name=file_name, bs=bs, split=0.8, generative=args.generative
     )
 
     opt = get_optimizer(lr=lr, model=model)
 
     fit(
+        supervised=False,
         model=model,
         train_dl=train_dl,
         opt=opt,

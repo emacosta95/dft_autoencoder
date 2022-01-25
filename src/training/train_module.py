@@ -63,7 +63,7 @@ def fit(
     wait = 0
     if supervised:
         r_max = -100000
-    best_loss = 10000
+    best_loss = 10 ** 9
 
     for epoch in trange(epochs, desc="train epoch"):
 
@@ -84,11 +84,11 @@ def fit(
 
         for batch_idx, batch in tqdm_iterator:
 
-            batch = batch.to(device=device)
+            batch = batch
             if not (supervised):
-                loss = model.train_generative_step(batch)
+                loss = model.train_generative_step(batch, device)
             else:
-                loss = model.fit_dft_step(batch)
+                loss = model.fit_dft_step(batch, device)
             loss.backward()
 
             opt.step()
@@ -99,21 +99,19 @@ def fit(
 
         model.eval()
         for batch in valid_dl:
-            batch = batch.to(device=device)
             if supervised:
-                r = model.r_square(batch)
+                r = model.r_square(batch, device)
                 r_ave_valid += r.item()
             else:
-                loss = model.train_generative_step(batch)
+                loss = model.train_generative_step(batch, device)
                 loss_ave_valid += loss.item()
 
         for batch in train_dl:
-            batch = batch.to(device=device)
             if supervised:
-                r = model.r_square(batch)
+                r = model.r_square(batch, device)
                 r_ave_valid += r.item()
             else:
-                loss = model.train_generative_step(batch)
+                loss = model.train_generative_step(batch, device)
                 loss_ave_valid += loss.item()
 
         if supervised:
@@ -158,13 +156,18 @@ def fit(
                     )
                     best_loss = loss_ave_valid
 
+            if supervised:
+                text = "_dft"
+            else:
+                text = "_generative"
+
             torch.save(
                 history_train,
-                f"losses_dft_pytorch/{name_checkpoint}_loss_train",
+                f"losses_dft_pytorch/{name_checkpoint}_loss_train" + text,
             )
             torch.save(
                 history_valid,
-                f"losses_dft_pytorch/{name_checkpoint}_loss_valid",
+                f"losses_dft_pytorch/{name_checkpoint}_loss_valid" + text,
             )
 
         if supervised:
