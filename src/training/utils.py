@@ -9,6 +9,7 @@ import os
 from tqdm.notebook import tqdm, trange
 from torch.utils.data import Dataset, TensorDataset, DataLoader
 import matplotlib.pyplot as plt
+from torchmetrics import R2Score
 
 
 def make_data_loader(
@@ -116,6 +117,7 @@ class ResultsAnalysis:
         text: List,
         variable_lr: List,
         early_stopping: List,
+        lr: List,
         dx: float,
     ):
         self.models_name = models_name
@@ -143,7 +145,7 @@ class ResultsAnalysis:
                     model_name=models_name[i][j],
                     cut=128,
                     n_instances=n_instances[i][j],
-                    lr=3,
+                    lr=lr[i][j],
                     diff_soglia=diff_soglia[i][j],
                     n_ensambles=n_ensambles[i][j],
                     epochs=epochs[i][j],
@@ -156,7 +158,7 @@ class ResultsAnalysis:
                     model_name=models_name[i][j],
                     cut=128,
                     n_instances=n_instances[i][j],
-                    lr=3,
+                    lr=lr[i][j],
                     diff_soglia=diff_soglia[i][j],
                     n_ensambles=n_ensambles[i][j],
                     epochs=epochs[i][j],
@@ -624,3 +626,76 @@ class ResultsAnalysis:
 
                 self.r_square_list.append(r2.compute())
                 r2.reset()
+
+
+def dataloader(
+    type: str,
+    model_name: str,
+    cut: int,
+    n_instances: int,
+    lr: int,
+    diff_soglia: int,
+    n_ensambles: int,
+    epochs: int,
+    early_stopping: bool,
+    variable_lr: bool,
+):
+
+    session_name = model_name
+
+    name_istances = f"number_istances_{n_instances}"
+    session_name = session_name + "_" + name_istances
+
+    n_initial_name = f"n_ensamble_{n_ensambles}_different_initial"
+    session_name = session_name + "_" + n_initial_name
+
+    epochs_name = f"epochs_{epochs}"
+    session_name = session_name + "_" + epochs_name
+
+    lr_name = f"lr_{lr}"
+    session_name = session_name + "_" + lr_name
+
+    if variable_lr:
+        variable_name = "variable_lr"
+        session_name = session_name + "_" + variable_name
+
+    if early_stopping:
+        diff_name = f"diff_soglia_{diff_soglia}"
+        session_name = session_name + "_" + diff_name
+
+    if type == "density":
+
+        data = np.load(
+            "gradient_descent_ensamble_numpy/min_density_" + session_name + ".npz",
+            allow_pickle=True,
+        )
+
+        min_n = data["min_density"]
+        gs_n = data["gs_density"]
+        return min_n, gs_n
+
+    elif type == "energy":
+
+        data = np.load(
+            "gradient_descent_ensamble_numpy/min_vs_gs_gradient_descent_"
+            + session_name
+            + ".npz",
+            allow_pickle=True,
+        )
+
+        min_eng = data["min_energy"]
+        gs_eng = data["gs_energy"]
+        return min_eng, gs_eng
+
+    elif type == "history":
+
+        data = np.load(
+            "gradient_descent_ensamble_numpy/history_" + session_name + ".npz",
+            allow_pickle=True,
+        )
+
+        history = data["history"]
+
+        history_n = data["history_n"]
+
+        return history, history_n
