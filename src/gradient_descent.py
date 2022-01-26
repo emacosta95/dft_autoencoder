@@ -4,8 +4,7 @@ from numpy.lib.mixins import _inplace_binary_method
 import torch as pt
 import torch.nn as nn
 import numpy as np
-from model import Energy
-from src.training.utils import initial_ensamble_random
+from src.model import Energy
 from tqdm import tqdm, trange
 import matplotlib.pyplot as plt
 from scipy import fft, ifft
@@ -113,6 +112,7 @@ class GradientDescent:
         self.min_exct_hist = {}
         self.eng_model_ref = {}
         self.grads = {}
+        self.min_z = {}
 
         self.epochs = epochs
 
@@ -136,9 +136,6 @@ class GradientDescent:
         )
         model = model.to(device=self.device)
         model.eval()
-
-        print("testing the model")
-        self._model_test(model, idx=0)
 
         # starting the cycle for each instance
         print("starting the cycle...")
@@ -247,9 +244,14 @@ class GradientDescent:
             eng_old = eng.detach()
 
             if epoch % 1000 == 0:
-
                 self.checkpoints(
-                    eng=eng, n_z=n_z, idx=idx, history=history, epoch=epoch, grad=grad
+                    eng=eng,
+                    n_z=n_z,
+                    idx=idx,
+                    history=history,
+                    epoch=epoch,
+                    grad=grad,
+                    z=z,
                 )
 
     def gradient_descent_step(self, energy: nn.Module, z: pt.Tensor) -> tuple:
@@ -270,16 +272,22 @@ class GradientDescent:
             grad = z.grad
             z -= self.lr * (grad)
             z.grad.zero_()
-        return eng.clone().detach(), n.detach().numpy(), grad.detach().cpu().numpy()
+        return (
+            eng.clone().detach(),
+            z,
+            n.detach().cpu().numpy(),
+            grad.detach().cpu().numpy(),
+        )
 
     def checkpoints(
         self,
         eng: np.array,
-        phi: pt.tensor,
+        n_z: np.array,
         grad: np.array,
         idx: int,
         history: np.array,
         epoch: int,
+        z: pt.tensor,
     ) -> None:
         """This function is a checkpoint save.
 
@@ -320,9 +328,10 @@ class GradientDescent:
 
         # exact_eng_min = exact_eng.clone()[idx_min].cpu()
 
-        phi_min = phi[idx_min]
+        n_z_min = n_z[idx_min]
         grad_min = grad[idx_min]
         history_min = history[:, idx_min]
+        z_min = z[idx_min].detach().cpu().numpy()
 
         # exact_history_min = exact_history[idx_min]
         # append to the values
@@ -339,12 +348,11 @@ class GradientDescent:
         # self.min_exct_hist.append(exact_history_min)
 
         if idx == 0:
-            self.min_ns[epoch] = phi_min.cpu().detach().numpy() ** 2
+            self.min_ns[epoch] = n_z_min
             self.grads[epoch] = grad_min
+            self.min_z[epoch] = z_min
         else:
-            self.min_ns[epoch] = np.vstack(
-                (self.min_ns[epoch], phi_min.cpu().detach().numpy() ** 2)
-            )
+            self.min_ns[epoch] = np.vstack((self.min_ns[epoch], n_z_min))
             self.grads[epoch] = np.vstack((self.grads[epoch], grad_min))
 
         # save the numpy values
@@ -360,6 +368,7 @@ class GradientDescent:
                 min_density=self.min_ns[epoch],
                 gs_density=self.n_target[0 : self.min_ns[epoch].shape[0]],
                 gradient=self.grads[epoch],
+                z=self.min_z[epoch],
             )
             np.savez(
                 "gradient_descent_ensamble_numpy/history_" + session_name,

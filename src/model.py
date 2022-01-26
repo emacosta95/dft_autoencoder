@@ -3,6 +3,7 @@ from typing import Dict, Tuple
 from black import out
 import torch
 import torch.nn as nn
+from torchmetrics import R2Score
 from zmq import device
 
 
@@ -355,32 +356,23 @@ class DFTVAE(nn.Module):
         latent_mu, latent_logvar = self.Encoder(x)
         latent = self._latent_sample(latent_mu, latent_logvar)
         x_recon = self.Decoder(latent)
-        loss = self.loss_generative(x_recon, x, latent_mu, latent_logvar)
-        return loss
+        loss, kldiv = self.loss_generative(x_recon, x, latent_mu, latent_logvar)
+        return loss, kldiv.item()
 
     def fit_dft_step(self, batch: Tuple, device: str):
         x, y = batch
         x = x.unsqueeze(1).to(device=device)
         y = y.to(device=device)
-        x = self.DFTModel(x)
+        x = self.DFTModel(x).squeeze()
         loss = self.loss_dft(x, y)
         return loss
 
-    def _r_value(output: torch.tensor, target: torch.tensor) -> torch.tensor:
-        err = (output - target) ** 2
-        dev = torch.std(target) ** 2
-        err = (torch.sum(err)) * (1.0 / output.shape[0])
-
-        r_value = 1.0 - err / dev
-
-        return r_value
-
-    def r_square(self, batch: Tuple, device):
-        x, target = batch
-        x = x.to(device=device)
-        target = x.to(device=device)
-        output = self.functional(x)
-        return self._r_value(output, target)
+    def r2_computation(self, batch: Tuple, device: str, r2):
+        x, y = batch
+        x = x.unsqueeze(1).to(device=device)
+        x = self.DFTModel(x).to(device=device).squeeze()
+        r2.update(x.cpu().detach(), y.cpu().detach())
+        return r2
 
 
 class Energy(nn.Module):

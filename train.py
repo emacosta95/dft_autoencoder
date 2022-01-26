@@ -10,30 +10,27 @@ from src.training.utils import (
     get_optimizer,
     count_parameters,
     vae_loss,
+    from_txt_to_bool,
 )
 from src.training.train_module import fit
 import torch.nn as nn
 import argparse
+import os
 
 
 # parser arguments
 
 parser = argparse.ArgumentParser()
-# subparsers = parser.add_subparsers(
-#     help="model settings (model), hyperparameters (hparam) and model checkpoint (checkpoint)"
-# )
-# model_parser = subparsers.add_parser("model")
-# model_parser.set_defaults(function="model")
 
 parser.add_argument(
     "--generative",
     type=str,
     help="if the model is generative or not (default=True)",
-    default=True,
+    default="False",
 )
 
 parser.add_argument(
-    "--input_channel", type=int, help="# input channels (default=1)", default=1
+    "--input_channels", type=int, help="# input channels (default=1)", default=1
 )
 parser.add_argument(
     "--input_size",
@@ -172,7 +169,7 @@ def main(args):
     # hyperparameters
 
     device = args.device
-    input_channel = args.input_channel
+    input_channel = args.input_channels
     input_size = args.input_size
 
     # 256 for model test, 30 for the others
@@ -206,13 +203,14 @@ def main(args):
     patiance = args.patiance
     early_stopping = args.early_stopping
 
+    # Set the model name
     model_name = args.model_name
-
     name_hc = f"_{hc}_hc"
     name_ks = f"_{kernel_size}_ks"
     name_pooling_size = f"_{pooling_size}_ps"
     model_name = model_name + name_hc + name_ks + name_pooling_size
 
+    # Set the dataset path
     file_name = args.data_path
 
     loss_func = vae_loss
@@ -221,22 +219,35 @@ def main(args):
 
         print(f"loading the model {args.name}")
         if args.generative:
-            history_valid = pt.load(
+
+            if os.path.isfile(
                 f"losses_dft_pytorch/{args.name}" + "_loss_valid_generative"
-            )
-            history_train = pt.load(
-                f"losses_dft_pytorch/{args.name}" + "_loss_train_generative"
-            )
+            ):
+                history_valid = pt.load(
+                    f"losses_dft_pytorch/{args.name}" + "_loss_valid_generative"
+                )
+                history_train = pt.load(
+                    f"losses_dft_pytorch/{args.name}" + "_loss_train_generative"
+                )
+            else:
+                history_valid = []
+                history_train = []
         else:
-            history_valid = pt.load(
-                f"losses_dft_pytorch/{args.name}" + "_loss_valid_dft"
-            )
-            history_train = pt.load(
-                f"losses_dft_pytorch/{args.name}" + "_loss_train_dft"
-            )
+
+            if os.path.isfile(f"losses_dft_pytorch/{args.name}" + "_loss_valid_dft"):
+                history_valid = pt.load(
+                    f"losses_dft_pytorch/{args.name}" + "_loss_valid_dft"
+                )
+                history_train = pt.load(
+                    f"losses_dft_pytorch/{args.name}" + "_loss_train_dft"
+                )
+            else:
+                history_valid = []
+                history_train = []
 
         print(len(history_train), len(history_valid))
         model = pt.load(f"model_dft_pytorch/{args.name}")
+        model.loss_dft = nn.MSELoss()
         model_name = args.name
     else:
 
@@ -247,7 +258,7 @@ def main(args):
             input_size=input_size,
             latent_dimension=args.latent_dimension,
             loss_generative=loss_func,
-            loss_dft=None,
+            loss_dft=nn.MSELoss(),
             input_channels=input_channel,
             hidden_channels=hc,
             kernel_size=kernel_size,
@@ -265,13 +276,16 @@ def main(args):
     print(count_parameters(model))
 
     train_dl, valid_dl = make_data_loader(
-        file_name=file_name, bs=bs, split=0.8, generative=args.generative
+        file_name=file_name,
+        bs=bs,
+        split=0.8,
+        generative=from_txt_to_bool(args.generative),
     )
 
     opt = get_optimizer(lr=lr, model=model)
 
     fit(
-        supervised=False,
+        supervised=not (from_txt_to_bool(args.generative)),
         model=model,
         train_dl=train_dl,
         opt=opt,
@@ -281,7 +295,7 @@ def main(args):
         name_checkpoint=model_name,
         history_train=history_train,
         history_valid=history_valid,
-        loss_func=loss_func,
+        loss_func=nn.MSELoss(),
         patiance=patiance,
         early_stopping=early_stopping,
     )

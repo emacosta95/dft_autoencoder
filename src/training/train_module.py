@@ -1,3 +1,4 @@
+from typing import List
 import numpy as np
 import argparse
 import torch
@@ -6,6 +7,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from typing import Tuple
 import os
+from torchmetrics import R2Score
 from tqdm import tqdm, trange
 from torch.utils.data import Dataset, TensorDataset, DataLoader
 import matplotlib.pyplot as plt
@@ -33,8 +35,8 @@ def fit(
     supervised: bool,
     checkpoint: bool,
     name_checkpoint: str,
-    history_train: list,
-    history_valid: list,
+    history_train: List,
+    history_valid: List,
     patiance: int,
     early_stopping: float,
 ) -> Tuple:
@@ -70,6 +72,7 @@ def fit(
         model.train()
         loss_ave_train = 0
         loss_ave_valid = 0
+        kldiv_valid = 0
 
         tqdm_iterator = tqdm(
             enumerate(train_dl),
@@ -78,15 +81,11 @@ def fit(
             leave=False,
         )
 
-        if supervised:
-            r_ave_train = 0
-            r_ave_valid = 0
-
         for batch_idx, batch in tqdm_iterator:
 
             batch = batch
             if not (supervised):
-                loss = model.train_generative_step(batch, device)
+                loss, _ = model.train_generative_step(batch, device)
             else:
                 loss = model.fit_dft_step(batch, device)
             loss.backward()
@@ -98,29 +97,37 @@ def fit(
             tqdm_iterator.refresh()
 
         model.eval()
+
+        if supervised:
+            r2 = R2Score()
+
         for batch in valid_dl:
             if supervised:
-                r = model.r_square(batch, device)
-                r_ave_valid += r.item()
+                r2 = model.r2_computation(batch, device, r2)
             else:
                 loss = model.train_generative_step(batch, device)
                 loss_ave_valid += loss.item()
+        if supervised:
+            r_ave_train = r2.compute()
+            r2.reset()
 
         for batch in train_dl:
             if supervised:
-                r = model.r_square(batch, device)
-                r_ave_valid += r.item()
+                r2 = model.r2_computation(batch, device, r2)
             else:
-                loss = model.train_generative_step(batch, device)
+                loss, kldiv = model.train_generative_step(batch, device)
                 loss_ave_valid += loss.item()
-
+                kldiv_valid += kldiv
         if supervised:
-            r_ave_train = r_ave_train / len(train_dl)
-            r_ave_valid = r_ave_valid / len(valid_dl)
+            r_ave_valid = r2.compute()
+            r2.reset()
+
             history_train.append(r_ave_train)
             history_valid.append(r_ave_valid)
+            print(r_ave_valid)
 
         else:
+            kldiv_valid = kldiv_valid / len(valid_dl)
             loss_ave_train = loss_ave_train / len(train_dl)
             history_train.append(loss_ave_train)
             loss_ave_valid = loss_ave_valid / len(valid_dl)
@@ -179,6 +186,7 @@ def fit(
             )
         else:
             print(
+                f"kldiv_valid={kldiv_valid} \n"
                 f"loss_ave_train={loss_ave_train} \n"
                 f"loss_ave_valid={loss_ave_valid} \n"
                 f"epochs={epoch}\n"

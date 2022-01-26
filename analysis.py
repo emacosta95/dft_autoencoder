@@ -21,7 +21,4 @@ for i in range(100):
     plt.show()
     print((14 / 256) * torch.sum(n[i]))
 
-# %% losses analysis
-
-
-# %%
+# %% gd analysis
