@@ -5,12 +5,15 @@ import numpy as np
 from src.training.utils import ResultsAnalysis
 
 #%% load the model
-model = torch.load("model_dft_pytorch/emodel_20_hc_13_ks_2_ps", map_location="cpu")
-
+model = torch.load(
+    "model_dft_pytorch/emodel_20_hc_13_ks_2_ps_32_ls_0.01_vb", map_location="cpu"
+)
+model.eval()
 #%% generate instance
 
-z = torch.randn((100, 16), dtype=torch.double)
+z = torch.randn((100, 32), dtype=torch.double)
 print(z)
+
 
 # %%
 n = model.proposal(z)
@@ -90,5 +93,23 @@ idx = [0]
 jdx = [10]
 result.histogram_plot(idx, jdx, bins=100, title=None, density=False)
 # %% Testing models
+model = torch.load(
+    "model_dft_pytorch/emodel_20_hc_13_ks_2_ps_32_ls_0.01_vb", map_location="cpu"
+)
+model.eval()
+n = np.load("data/final_dataset/data_test.npz")["density"][0:1000]
 
-# %%
+n = torch.from_numpy(n)
+n = n.unsqueeze(1)
+latent_mu, latent_logvar = model.Encoder(n)
+latent = model._latent_sample(latent_mu, latent_logvar)
+x_recon = model.Decoder(latent)
+
+n = n.squeeze()
+x_recon = x_recon.squeeze()
+
+for i in range(100):
+    plt.plot(n.detach().numpy()[i])
+    plt.plot(x_recon.detach().numpy()[i])
+    plt.show()
+# %% testing the dn

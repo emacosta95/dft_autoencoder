@@ -9,7 +9,7 @@ from src.training.utils import (
     make_data_loader,
     get_optimizer,
     count_parameters,
-    vae_loss,
+    VaeLoss,
     from_txt_to_bool,
 )
 from src.training.train_module import fit
@@ -21,90 +21,7 @@ import os
 # parser arguments
 
 parser = argparse.ArgumentParser()
-
-parser.add_argument(
-    "--generative",
-    type=str,
-    help="if the model is generative or not (default=True)",
-    default="False",
-)
-
-parser.add_argument(
-    "--input_channels", type=int, help="# input channels (default=1)", default=1
-)
-parser.add_argument(
-    "--input_size",
-    type=int,
-    help="number of features of the input (default=256)",
-    default=256,
-)
-
-parser.add_argument(
-    "--latent_dimension",
-    type=int,
-    help="number of features of the input (default=16)",
-    default=16,
-)
-
-parser.add_argument(
-    "--hidden_channels",
-    type=int,
-    help="list of hidden channels (default=120)",
-    default=20,
-)
-
-parser.add_argument(
-    "--pooling_size",
-    type=int,
-    help="pooling size in the Avg Pooling (default=2)",
-    default=2,
-)
-
-parser.add_argument(
-    "--padding",
-    type=int,
-    help="padding dimension (default=2)",
-    default=6,
-)
-
-
-parser.add_argument(
-    "--ks",
-    type=int,
-    help="kernel size (default=13)",
-    default=13,
-)
-
-parser.add_argument(
-    "--padding_mode",
-    type=str,
-    help="the padding mode of the model (default='circular')",
-    default="circular",
-)
-
-parser.add_argument(
-    "--model_name",
-    type=str,
-    help="name of the model (default='emodel_2_layer')",
-    default="emodel",
-)
-
-
-# checkpoint_parser = subparsers.add_parser("checkpoint")
-# checkpoint_parser.set_defaults(function="checkpoint")
-
-parser.add_argument("--load", type=bool, help="Loading or not the model", default=False)
-parser.add_argument("--name", type=str, help="name of the model", default=None)
-
-# hparam_parser = subparsers.add_parser("hparams")
-# hparam_parser.set_defaults(function="hparam_parser")
-
-parser.add_argument(
-    "--seed",
-    type=int,
-    help="seed for pytorch and numpy (default=42)",
-    default=42,
-)
+subparsers = parser.add_subparsers()
 
 parser.add_argument(
     "--data_path",
@@ -121,6 +38,14 @@ parser.add_argument(
 )
 
 parser.add_argument(
+    "--seed",
+    type=int,
+    help="seed for pytorch and numpy (default=42)",
+    default=42,
+)
+
+
+parser.add_argument(
     "--device",
     type=str,
     help="the threshold difference for the early stopping (default=device available)",
@@ -128,12 +53,18 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    "--epochs",
+    "--patiance",
     type=int,
-    help="training epochs (default=800)",
-    default=1200,
+    help="num of epochs tollerance for the early stopping (default=5)",
+    default=5,
 )
 
+parser.add_argument(
+    "--early_stopping",
+    type=float,
+    help="the threshold difference for the early stopping (default=10**-4)",
+    default=10 ** -4,
+)
 
 parser.add_argument(
     "--lr",
@@ -149,18 +80,106 @@ parser.add_argument(
     default=100,
 )
 
-parser.add_argument(
-    "--patiance",
-    type=int,
-    help="num of epochs tollerance for the early stopping (default=5)",
-    default=5,
-)
 
 parser.add_argument(
-    "--early_stopping",
+    "--epochs",
+    type=int,
+    help="training epochs (default=800)",
+    default=1200,
+)
+
+model_parser = subparsers.add_parser("model", help="model hparameters")
+
+model_parser.add_argument(
+    "--generative",
+    type=str,
+    help="if the model is generative or not (default=True)",
+    default="False",
+)
+
+
+model_parser.add_argument(
+    "--input_channels", type=int, help="# input channels (default=1)", default=1
+)
+model_parser.add_argument(
+    "--input_size",
+    type=int,
+    help="number of features of the input (default=256)",
+    default=256,
+)
+
+model_parser.add_argument(
+    "--latent_dimension",
+    type=int,
+    help="number of features of the input (default=16)",
+    default=16,
+)
+
+model_parser.add_argument(
+    "--hidden_channels",
+    type=int,
+    help="list of hidden channels (default=120)",
+    default=20,
+)
+
+model_parser.add_argument(
+    "--pooling_size",
+    type=int,
+    help="pooling size in the Avg Pooling (default=2)",
+    default=2,
+)
+
+model_parser.add_argument(
+    "--padding",
+    type=int,
+    help="padding dimension (default=2)",
+    default=6,
+)
+
+
+model_parser.add_argument(
+    "--kernel_size",
+    type=int,
+    help="kernel size (default=13)",
+    default=13,
+)
+
+model_parser.add_argument(
+    "--padding_mode",
+    type=str,
+    help="the padding mode of the model (default='circular')",
+    default="circular",
+)
+
+model_parser.add_argument(
+    "--loss_parameter",
     type=float,
-    help="the threshold difference for the early stopping (default=10**-4)",
-    default=10 ** -4,
+    help="the amplitude of the kldiv (default=0.1)",
+    default=0.1,
+)
+
+model_parser.add_argument(
+    "--model_name",
+    type=str,
+    help="name of the model (default='emodel_2_layer')",
+    default="emodel",
+)
+
+
+model_parser = subparsers.add_parser("model")
+# checkpoint_parser.set_defaults(function="checkpoint")
+
+# hparam_parser = subparsers.add_parser("hparams")
+# hparam_parser.set_defaults(function="hparam_parser")
+checkpoint_parser = subparsers.add_parser(
+    "checkpoint", help="options for starting the training with loaded models"
+)
+
+checkpoint_parser.add_argument(
+    "--load", type=bool, help="Loading or not the model", default=False
+)
+checkpoint_parser.add_argument(
+    "--name", type=str, help="name of the model", default=None
 )
 
 
@@ -180,7 +199,7 @@ def main(args):
     padding = args.padding  # 6
     padding_mode = args.padding_mode
 
-    kernel_size = args.ks  # 13
+    kernel_size = args.kernel_size  # 13
 
     # Select the number of threads
     pt.set_num_threads(args.num_threads)
@@ -208,12 +227,21 @@ def main(args):
     name_hc = f"_{hc}_hc"
     name_ks = f"_{kernel_size}_ks"
     name_pooling_size = f"_{pooling_size}_ps"
-    model_name = model_name + name_hc + name_ks + name_pooling_size
+    name_latent_dimension = f"_{args.latent_dimension}_ls"
+    name_loss_parameter = f"_{args.loss_parameter}_vb"
+    model_name = (
+        model_name
+        + name_hc
+        + name_ks
+        + name_pooling_size
+        + name_latent_dimension
+        + name_loss_parameter
+    )
 
     # Set the dataset path
     file_name = args.data_path
 
-    loss_func = vae_loss
+    loss_func = VaeLoss(variational_beta=args.loss_parameter)
 
     if args.load:
 

@@ -72,6 +72,7 @@ def fit(
         model.train()
         loss_ave_train = 0
         loss_ave_valid = 0
+        kldiv_train = 0
         kldiv_valid = 0
 
         tqdm_iterator = tqdm(
@@ -97,7 +98,6 @@ def fit(
             tqdm_iterator.refresh()
 
         model.eval()
-
         if supervised:
             r2 = R2Score()
 
@@ -105,8 +105,9 @@ def fit(
             if supervised:
                 r2 = model.r2_computation(batch, device, r2)
             else:
-                loss = model.train_generative_step(batch, device)
+                loss, kldiv = model.train_generative_step(batch, device)
                 loss_ave_valid += loss.item()
+                kldiv_valid += kldiv
         if supervised:
             r_ave_train = r2.compute()
             r2.reset()
@@ -116,8 +117,8 @@ def fit(
                 r2 = model.r2_computation(batch, device, r2)
             else:
                 loss, kldiv = model.train_generative_step(batch, device)
-                loss_ave_valid += loss.item()
-                kldiv_valid += kldiv
+                loss_ave_train += loss.item()
+                kldiv_train += kldiv
         if supervised:
             r_ave_valid = r2.compute()
             r2.reset()
@@ -127,7 +128,9 @@ def fit(
             print(r_ave_valid)
 
         else:
+            kldiv_train = kldiv_train / len(train_dl)
             kldiv_valid = kldiv_valid / len(valid_dl)
+
             loss_ave_train = loss_ave_train / len(train_dl)
             history_train.append(loss_ave_train)
             loss_ave_valid = loss_ave_valid / len(valid_dl)
@@ -187,6 +190,7 @@ def fit(
         else:
             print(
                 f"kldiv_valid={kldiv_valid} \n"
+                f"kldiv_train={kldiv_train} \n"
                 f"loss_ave_train={loss_ave_train} \n"
                 f"loss_ave_valid={loss_ave_valid} \n"
                 f"epochs={epoch}\n"
