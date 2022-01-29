@@ -93,11 +93,11 @@ idx = [0]
 jdx = [10]
 result.histogram_plot(idx, jdx, bins=100, title=None, density=False)
 # %% Testing models
-model = torch.load(
-    "model_dft_pytorch/emodel_20_hc_13_ks_2_ps_32_ls_0.01_vb", map_location="cpu"
-)
+model_name = "emodel_20_hc_13_ks_2_ps_8_ls_0.001_vb"
+
+model = torch.load("model_dft_pytorch/" + model_name, map_location="cpu")
 model.eval()
-n = np.load("data/final_dataset/data_test.npz")["density"][0:1000]
+n = np.load("data/final_dataset/data_test.npz")["density"][0:5000]
 
 n = torch.from_numpy(n)
 n = n.unsqueeze(1)
@@ -112,4 +112,35 @@ for i in range(100):
     plt.plot(n.detach().numpy()[i])
     plt.plot(x_recon.detach().numpy()[i])
     plt.show()
-# %% testing the dn
+#  save the model
+np.savez(
+    f"gen_data/n_{model_name}.npz",
+    n_gen=x_recon.detach().numpy(),
+    n_exact=n.detach().numpy(),
+)
+
+# %% Loss analysis
+ls = [32, 64, 128]
+vb = [0.01] * len(ls)
+
+loss_val = [
+    torch.load(
+        f"losses_dft_pytorch/emodel_20_hc_13_ks_2_ps_{ls[i]}_ls_{vb[i]}_vb_loss_valid_generative"
+    )
+    for i in range(len(ls))
+]
+loss_train = [
+    torch.load(
+        f"losses_dft_pytorch/emodel_20_hc_13_ks_2_ps_{ls[i]}_ls_{vb[i]}_vb_loss_train_generative"
+    )
+    for i in range(len(ls))
+]
+
+# %%
+fig = plt.figure(figsize=(10, 10))
+plt.plot(loss_val[0])
+plt.plot(loss_val[1])
+plt.plot(loss_val[2])
+plt.semilogx()
+plt.show()
+# %%

@@ -23,6 +23,9 @@ import os
 parser = argparse.ArgumentParser()
 subparsers = parser.add_subparsers()
 
+parser.add_argument("--load", type=bool, help="Loading or not the model", default=False)
+parser.add_argument("--name", type=str, help="name of the model", default=None)
+
 parser.add_argument(
     "--data_path",
     type=str,
@@ -163,23 +166,6 @@ model_parser.add_argument(
     type=str,
     help="name of the model (default='emodel_2_layer')",
     default="emodel",
-)
-
-
-model_parser = subparsers.add_parser("model")
-# checkpoint_parser.set_defaults(function="checkpoint")
-
-# hparam_parser = subparsers.add_parser("hparams")
-# hparam_parser.set_defaults(function="hparam_parser")
-checkpoint_parser = subparsers.add_parser(
-    "checkpoint", help="options for starting the training with loaded models"
-)
-
-checkpoint_parser.add_argument(
-    "--load", type=bool, help="Loading or not the model", default=False
-)
-checkpoint_parser.add_argument(
-    "--name", type=str, help="name of the model", default=None
 )
 
 
