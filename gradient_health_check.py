@@ -1,3 +1,4 @@
+#%%
 import time
 from ast import increment_lineno
 from numpy.lib.mixins import _inplace_binary_method
@@ -37,18 +38,11 @@ def smooth_grad(grad: pt.tensor, cut: int) -> pt.tensor:
     return grad
 
 
-# %% THE GRADIENT DESCENT CLASS
-
-
 class GradientDescent:
     def __init__(
         self,
         n_instances: int,
         loglr: int,
-        beta: float,
-        beta_ratio: float,
-        ann_step: int,
-        annealing: bool,
         cut: int,
         logdiffsoglia: int,
         n_ensambles: int,
@@ -66,17 +60,9 @@ class GradientDescent:
         device: str,
     ):
 
-        self.annealing = annealing
-
         self.device = device
         self.num_threads = num_threads
         self.seed = seed
-
-        if self.annealing:
-
-            self.beta = beta
-            self.beta_ratio = beta_ratio
-            self.ann_step = ann_step
 
         self.early_stopping = early_stopping
         self.variable_lr = variable_lr
@@ -178,6 +164,7 @@ class GradientDescent:
         n_ref = n_ref.reshape(1, 256)
 
         energy = Energy(model, pt.tensor(pot, device=self.device), self.dx)
+        energy.eval()
         eng = energy(pt.tensor(n_ref, device=self.device))
         self.eng_model_ref = np.append(self.eng_model_ref, eng.detach().cpu().numpy())
 
@@ -256,16 +243,16 @@ class GradientDescent:
 
             eng_old = eng.detach()
 
-            if epoch % 1000 == 0:
-                self.checkpoints(
-                    eng=eng,
-                    n_z=n_z,
-                    idx=idx,
-                    history=history,
-                    epoch=epoch,
-                    grad=grad,
-                    z=z,
-                )
+            plt.plot(n_z[0], label="n")
+            plt.legend()
+            plt.show()
+            plt.plot(z.detach().cpu().numpy()[0], label="z")
+            plt.legend()
+            plt.show()
+            plt.plot(grad[0], label="grad")
+            plt.legend()
+            plt.show()
+
             tqdm_bar.set_description(f"eng={eng}")
             tqdm_bar.refresh()
 
@@ -282,9 +269,10 @@ class GradientDescent:
 
         eng, n = energy(z)
         eng.backward(pt.ones_like(eng))
-
+        print(z.is_leaf)
         with pt.no_grad():
-            grad = z.grad
+            grad = z.grad.clone()
+            print(grad)
             z -= self.lr * (grad)
             z.grad.zero_()
         return (
@@ -294,98 +282,28 @@ class GradientDescent:
             grad.detach().cpu().numpy(),
         )
 
-    def checkpoints(
-        self,
-        eng: np.array,
-        n_z: np.array,
-        grad: np.array,
-        idx: int,
-        history: np.array,
-        epoch: int,
-        z: pt.tensor,
-    ) -> None:
-        """This function is a checkpoint save.
 
-        Args:
-        eng[np.array]: the set of energies for each initial configuration obtained after the gradient descent
-        phi[pt.tensor]: the set of sqrt density profiles for each initial configuration obtained after the gradient descent
-        idx[int]: the index of the instance
-        history[np.array]: the history of the computed energies for each initial configuration
-        epoch[int]: the current epoch in which the data are saved
-        """
+#%%
+gd = GradientDescent(
+    n_instances=1,
+    loglr=3,
+    cut=128,
+    logdiffsoglia=-200,
+    n_ensambles=1,
+    target_path="data/final_dataset/data_test.npz",
+    model_name="emodel_20_hc_13_ks_2_ps",
+    epochs=100,
+    variable_lr=False,
+    final_lr=1,
+    early_stopping=False,
+    L=14,
+    resolution=256,
+    latent_dimension=16,
+    seed=42,
+    num_threads=1,
+    device="cuda",
+)
 
-        # initialize the filename
-        session_name = self.model_name
+gd.run()
 
-        name_istances = f"number_istances_{self.n_instances}"
-        session_name = session_name + "_" + name_istances
-
-        n_initial_name = f"n_ensamble_{self.n_ensambles}_different_initial"
-        session_name = session_name + "_" + n_initial_name
-
-        epochs_name = f"epochs_{epoch}"
-        session_name = session_name + "_" + epochs_name
-
-        lr_name = f"lr_{np.abs(self.loglr)}"
-        session_name = session_name + "_" + lr_name
-
-        if self.variable_lr:
-            variable_name = "variable_lr"
-            session_name = session_name + "_" + variable_name
-
-        if self.early_stopping:
-            diff_name = f"diff_soglia_{int(np.abs(np.log10(self.diffsoglia)))}"
-            session_name = session_name + "_" + diff_name
-
-        # considering the minimum value
-        eng_min = pt.min(eng, axis=0)[0].cpu().numpy()
-        idx_min = pt.argmin(eng, axis=0)
-
-        # exact_eng_min = exact_eng.clone()[idx_min].cpu()
-
-        n_z_min = n_z[idx_min]
-        grad_min = grad[idx_min]
-        history_min = history[:, idx_min]
-        z_min = z[idx_min].detach().cpu().numpy()
-
-        # exact_history_min = exact_history[idx_min]
-        # append to the values
-        if idx == 0:
-            self.min_engs[epoch] = eng_min
-            self.min_hist[epoch] = history_min.cpu().numpy().reshape(1, -1)
-
-        else:
-            self.min_engs[epoch] = np.append(self.min_engs[epoch], eng_min)
-            self.min_hist[epoch] = np.append(
-                self.min_hist[epoch], history_min.cpu().numpy().reshape(1, -1)
-            )
-
-        # self.min_exct_hist.append(exact_history_min)
-
-        if idx == 0:
-            self.min_ns[epoch] = n_z_min
-            self.grads[epoch] = grad_min
-            self.min_z[epoch] = z_min
-        else:
-            self.min_ns[epoch] = np.vstack((self.min_ns[epoch], n_z_min))
-            self.grads[epoch] = np.vstack((self.grads[epoch], grad_min))
-
-        # save the numpy values
-        if idx != 0:
-            np.savez(
-                "gradient_descent_ensamble_numpy/min_vs_gs_gradient_descent_"
-                + session_name,
-                min_energy=self.min_engs[epoch],
-                gs_energy=self.e_target[0 : (self.min_engs[epoch].shape[0])],
-            )
-            np.savez(
-                "gradient_descent_ensamble_numpy/min_density_" + session_name,
-                min_density=self.min_ns[epoch],
-                gs_density=self.n_target[0 : self.min_ns[epoch].shape[0]],
-                gradient=self.grads[epoch],
-                z=self.min_z[epoch],
-            )
-            np.savez(
-                "gradient_descent_ensamble_numpy/history_" + session_name,
-                history=self.min_hist[epoch],
-            )
+# %%

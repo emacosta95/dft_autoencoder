@@ -600,9 +600,7 @@ class ResultsAnalysis:
 
         n_std = np.load(data_path)["density"]
         F_std = np.load(data_path)["F"]
-        ds = TensorDataset(
-            pt.tensor(n_std).view(-1, 1, n_std.shape[-1]), pt.tensor(F_std)
-        )
+        ds = TensorDataset(pt.tensor(n_std).view(-1, n_std.shape[-1]), pt.tensor(F_std))
         dl = DataLoader(ds, batch_size=100)
         for i in idx:
             for j in jdx:
@@ -612,14 +610,9 @@ class ResultsAnalysis:
                 model.eval()
                 model = model.to(dtype=pt.double)
 
-                for n, F in dl:
-                    n = n.to(dtype=pt.double)
-                    f = f.to(dtype=pt.double)
+                for batch in dl:
                     model.eval()
-                    output = model(n)
-                    output = output.view(output.shape[0])
-                    r2.update(output, f)
-
+                    model.r2_computation(batch, device="cpu", r2=r2)
                 print(model)
                 print(f"# parameters={count_parameters(model)}")
                 print(f"R_square_test={r2.compute()} for {self.text[i][j]} \n")

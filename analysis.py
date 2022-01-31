@@ -6,22 +6,22 @@ from src.training.utils import ResultsAnalysis
 
 #%% load the model
 model = torch.load(
-    "model_dft_pytorch/emodel_20_hc_13_ks_2_ps_32_ls_0.01_vb", map_location="cpu"
+    "model_dft_pytorch/emodel_20_hc_13_ks_2_ps_16_ls_0.001_vb", map_location="cpu"
 )
 model.eval()
 #%% generate instance
 
-z = torch.randn((100, 32), dtype=torch.double)
-print(z)
+z = torch.randn((100, 16), dtype=torch.double)
 
 
 # %%
-n = model.proposal(z)
+n, f = model(z)
 print(n.shape)
 
 #%%
 for i in range(100):
-    plt.plot(n[i].detach().numpy())
+    plt.plot(n[i].detach().numpy(), label=f[i])
+    plt.legend()
     plt.show()
     print((14 / 256) * torch.sum(n[i]))
 
@@ -43,7 +43,7 @@ n_ensambles = [[1] * n_sample] * n_hc
 epochs = [[i * 1000 for i in range(n_sample)]] * n_hc
 diff_soglia = [[1] * n_sample] * n_hc
 models_name = [
-    ["emodel_20_hc_13_ks_2_ps"] * n_sample,
+    ["emodel_20_hc_13_ks_2_ps_16_ls_0.01_vb"] * n_sample,
 ]
 text = [
     [f"emodel epochs={epoch}" for epoch in epochs[0]],
@@ -51,7 +51,7 @@ text = [
 title = f"Gradient descent evolution"
 variable_lr = [[False] * n_sample] * n_hc
 early_stopping = [[False] * n_sample] * n_hc
-lr = [[0.2] * n_sample] * n_hc
+lr = [[3] * n_sample] * n_hc
 n_sample = [n_sample] * n_hc
 
 
@@ -83,24 +83,28 @@ result.plot_results(
     loglog=False,
 )
 
+
 # %% Plot single samples
 idx = [0]
-jdx = [10]
+jdx = [1]
+
+result.test_models(idx, jdx, "data/final_dataset/data_test.npz")
+
+#%%
 result.plot_samples(idx=idx, jdx=jdx, n_samples=3, title="hc comparison", l=14)
 
 # %% Histogram plots
 idx = [0]
-jdx = [10]
+jdx = [0]
 result.histogram_plot(idx, jdx, bins=100, title=None, density=False)
 # %% Testing models
-model_name = "emodel_20_hc_13_ks_2_ps_8_ls_0.001_vb"
+model_name = "emodel_20_hc_13_ks_2_ps_16_ls_0.0001_vb"
 
 model = torch.load("model_dft_pytorch/" + model_name, map_location="cpu")
 model.eval()
 n = np.load("data/final_dataset/data_test.npz")["density"][0:5000]
 
-n = torch.from_numpy(n)
-n = n.unsqueeze(1)
+n = torch.from_numpy(n).unsqueeze(1)
 latent_mu, latent_logvar = model.Encoder(n)
 latent = model._latent_sample(latent_mu, latent_logvar)
 x_recon = model.Decoder(latent)
@@ -135,12 +139,38 @@ loss_train = [
     )
     for i in range(len(ls))
 ]
-
-# %%
+# plots
 fig = plt.figure(figsize=(10, 10))
 plt.plot(loss_val[0])
 plt.plot(loss_val[1])
 plt.plot(loss_val[2])
 plt.semilogx()
 plt.show()
+
+# %% Analysis densities
+data_1 = np.load("gen_data/n_emodel_20_hc_13_ks_2_ps_8_ls_0.001_vb.npz")
+data_2 = np.load("gen_data/n_emodel_20_hc_13_ks_2_ps_16_ls_0.001_vb.npz")
+
+n_1 = data_1["n_exact"]
+n_gen_1 = data_1["n_gen"]
+
+n_2 = data_2["n_exact"]
+n_gen_2 = data_2["n_gen"]
+
+dn1 = np.sqrt(np.sum((n_1 - n_gen_1) ** 2, axis=1)) / np.sqrt(np.sum(n_1 ** 2, axis=1))
+dn2 = np.sqrt(np.sum((n_2 - n_gen_2) ** 2, axis=1)) / np.sqrt(np.sum(n_2 ** 2, axis=1))
+
+av_dn1 = np.average(dn1)
+av_dn2 = np.average(dn2)
+
+plt.hist(
+    (dn1, dn2),
+    bins=50,
+    label=[f"ls=8 <dn>={av_dn1:.4f}", f"ls=16 <dn>={av_dn2:.4f}"],
+)
+plt.legend(fontsize=15)
+plt.xlabel(r"$|\Delta n|/|n|$", fontsize=20)
+plt.show()
+
+
 # %%
