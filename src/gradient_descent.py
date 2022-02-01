@@ -9,6 +9,8 @@ from tqdm import tqdm, trange
 import matplotlib.pyplot as plt
 from scipy import fft, ifft
 import random
+from torch.distributions.normal import Normal
+
 
 device = pt.device("cuda" if pt.cuda.is_available() else "cpu")
 
@@ -73,7 +75,6 @@ class GradientDescent:
         self.seed = seed
 
         if self.annealing:
-
             self.beta = beta
             self.beta_ratio = beta_ratio
             self.ann_step = ann_step
@@ -294,6 +295,77 @@ class GradientDescent:
             grad.detach().cpu().numpy(),
         )
 
+    def _ann_step(self, z: pt.Tensor, idx: int, energy: nn.Module):
+
+        for step in self.ann_step:
+
+            # new propose
+            new_z = pt.randn(self.latent_dimension, dtype=pt.double, device=self.device)
+
+            # compute the transition
+            # rate
+            logp_new = Normal(
+                pt.zeros(self.latent_dimension), pt.ones(self.latent_dimension)
+            ).log_prob(new_z)
+            logp_old = Normal(
+                pt.zeros(self.latent_dimension), pt.ones(self.latent_dimension)
+            ).log_prob(z)
+            ratio = logp_old - logp_new
+
+            # boltzmann
+            eng_new, _ = energy(new_z)
+            eng, n_z = energy(z)
+            delta_e = (eng_new - eng) * self.beta
+            ratio = ratio + delta_e
+
+            # random number
+            w = pt.rand(1)
+            if ratio.exp() > w:
+                z = new_z
+
+        return z, n_z.detach().cpu().numpy()
+
+    def annealing(self, z: pt.Tensor, idx: int, model: nn.Module) -> tuple:
+
+        # initialize the single gradient descent
+
+        n_ref = self.n_target[idx]
+        pot = pt.tensor(self.v_target[idx], device=self.device)
+        energy = Energy(model, pot, self.dx)
+        energy = energy.to(device=self.device)
+
+        history = pt.tensor([], device=self.device)
+        # exact_history = np.array([])
+        eng_old = pt.tensor(0, device=self.device)
+
+        tqdm_bar = tqdm(range(self.epochs))
+        for epoch in tqdm_bar:
+
+            eng, z, n_z = self._ann_step(energy=energy, z=z)
+            diff_eng = pt.abs(eng.detach() - eng_old)
+
+            if epoch == 0:
+                history = eng.detach().view(1, eng.shape[0])
+            elif epoch % 100 == 0:
+                history = pt.cat((history, eng.detach().view(1, eng.shape[0])), dim=0)
+
+            eng_old = eng.detach()
+
+            if epoch % 1000 == 0:
+                self.checkpoints(
+                    eng=eng,
+                    n_z=n_z,
+                    idx=idx,
+                    history=history,
+                    epoch=epoch,
+                    grad=None,
+                    z=z,
+                )
+
+            self.beta = self.beta_ratio * self.beta
+            tqdm_bar.set_description(f"eng={eng}")
+            tqdm_bar.refresh()
+
     def checkpoints(
         self,
         eng: np.array,
@@ -344,7 +416,8 @@ class GradientDescent:
         # exact_eng_min = exact_eng.clone()[idx_min].cpu()
 
         n_z_min = n_z[idx_min]
-        grad_min = grad[idx_min]
+        if grad != None:
+            grad_min = grad[idx_min]
         history_min = history[:, idx_min]
         z_min = z[idx_min].detach().cpu().numpy()
 
@@ -364,11 +437,13 @@ class GradientDescent:
 
         if idx == 0:
             self.min_ns[epoch] = n_z_min
-            self.grads[epoch] = grad_min
+            if grad != None:
+                self.grads[epoch] = grad_min
             self.min_z[epoch] = z_min
         else:
             self.min_ns[epoch] = np.vstack((self.min_ns[epoch], n_z_min))
-            self.grads[epoch] = np.vstack((self.grads[epoch], grad_min))
+            if grad != None:
+                self.grads[epoch] = np.vstack((self.grads[epoch], grad_min))
 
         # save the numpy values
         if idx != 0:

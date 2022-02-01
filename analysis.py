@@ -98,7 +98,7 @@ idx = [0]
 jdx = [0]
 result.histogram_plot(idx, jdx, bins=100, title=None, density=False)
 # %% Testing models
-model_name = "emodel_20_hc_13_ks_2_ps_16_ls_0.0001_vb"
+model_name = "emodel_20_hc_13_ks_2_ps_16_ls_0.001_vb"
 
 model = torch.load("model_dft_pytorch/" + model_name, map_location="cpu")
 model.eval()
@@ -112,17 +112,26 @@ x_recon = model.Decoder(latent)
 n = n.squeeze()
 x_recon = x_recon.squeeze()
 
-for i in range(100):
-    plt.plot(n.detach().numpy()[i])
-    plt.plot(x_recon.detach().numpy()[i])
-    plt.show()
-#  save the model
-np.savez(
-    f"gen_data/n_{model_name}.npz",
-    n_gen=x_recon.detach().numpy(),
-    n_exact=n.detach().numpy(),
-)
+# for i in range(100):
+#     plt.plot(n.detach().numpy()[i])
+#     plt.plot(x_recon.detach().numpy()[i])
+#     plt.show()
+# #  save the model
+# np.savez(
+#     f"gen_data/n_{model_name}.npz",
+#     n_gen=x_recon.detach().numpy(),
+#     n_exact=n.detach().numpy(),
+# )
 
+# %% plotting the hist
+
+print(latent_mu.shape)
+
+for i in range(latent_mu.shape[1]):
+
+    plt.hist(latent_mu[:1000, i].detach().numpy(), bins=50, label=f"dimension={i}")
+    plt.legend()
+    plt.show()
 # %% Loss analysis
 ls = [32, 64, 128]
 vb = [0.01] * len(ls)

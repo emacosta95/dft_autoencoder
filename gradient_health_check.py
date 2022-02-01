@@ -10,6 +10,8 @@ from tqdm import tqdm, trange
 import matplotlib.pyplot as plt
 from scipy import fft, ifft
 import random
+from torch.distributions.normal import Normal
+
 
 device = pt.device("cuda" if pt.cuda.is_available() else "cpu")
 
@@ -44,6 +46,10 @@ class GradientDescent:
         n_instances: int,
         loglr: int,
         cut: int,
+        beta: float,
+        beta_final: float,
+        ann_step: int,
+        annealing: bool,
         logdiffsoglia: int,
         n_ensambles: int,
         target_path: str,
@@ -59,6 +65,13 @@ class GradientDescent:
         num_threads: int,
         device: str,
     ):
+
+        if self.annealing:
+            self.beta = beta
+            self.beta_ratio = pt.exp(
+                (1 / epochs) * pt.log(pt.tensor(beta_final / beta))
+            )
+            self.ann_step = ann_step
 
         self.device = device
         self.num_threads = num_threads
@@ -145,7 +158,7 @@ class GradientDescent:
 
             # compute the gradient descent
             # for a single target sample
-            self._single_gradient_descent(z=z, idx=idx, model=model)
+            self.annealing(z=z, idx=idx, model=model)
 
     def _model_test(self, model: nn.Module, idx: int) -> None:
         """This routine is a test for the pytorch model (remember the problem of the different outcomes for the same input data)
@@ -282,17 +295,106 @@ class GradientDescent:
             grad.detach().cpu().numpy(),
         )
 
+    def _annealing_step(self, z: pt.Tensor, energy: nn.Module):
+
+        count = 0
+        for step in trange(self.ann_step):
+
+            # # distribution
+            distrib = Normal(
+                pt.zeros(self.latent_dimension).double(),
+                pt.ones(self.latent_dimension).double(),
+            )
+
+            # new propose
+            new_z = distrib.rsample().to(device=self.device)
+
+            # compute the transition
+            # rate
+            logp_new = distrib.log_prob(new_z.cpu())
+            logp_old = distrib.log_prob(z.cpu())
+            # print(f"logp_old={logp_old.sum().item()} ")
+            # print(f"logp_new={logp_new.sum().item()} ")
+            ratio = logp_old.view(-1).sum() - logp_new.sum()
+            # print(f"log_trans={ratio} ")
+
+            # boltzmann
+            eng_new, _ = energy(new_z)
+            # print(f"eng_new={eng_new.item()} ")
+            eng, n_z = energy(z)
+            # print(f"eng={eng.item()} \n")
+            delta_e = (eng - eng_new) * self.beta
+            ratio = delta_e  # ratio.to(device=self.device) + delta_e
+            # print(f"log boltz={delta_e.item()} ")
+
+            # norm
+            # norm = pt.abs(pt.sum(n_z) * self.dx - 1)
+            # print(norm)
+
+            # random number
+            w = pt.rand(1, device=self.device)
+            # print(f"value={ratio.exp()}")
+            if ratio.exp() > w:  # and norm < 0.01:
+                z = new_z
+                #    print("new sample!")
+                count += 1
+
+            # print("arikez \n")
+
+        print(f"accept={count/self.ann_step} \n")
+
+        return eng, z, n_z.detach().cpu().numpy()
+
+    def annealing(self, z: pt.Tensor, idx: int, model: nn.Module) -> tuple:
+
+        # initialize the single gradient descent
+
+        n_ref = self.n_target[idx]
+        pot = pt.tensor(self.v_target[idx], device=self.device)
+        energy = Energy(model, pot, self.dx)
+        energy = energy.to(device=self.device)
+
+        history = pt.tensor([], device=self.device)
+        # exact_history = np.array([])
+        eng_old = pt.tensor(0, device=self.device)
+
+        tqdm_bar = tqdm(range(self.epochs))
+        for epoch in tqdm_bar:
+
+            eng, z, n_z = self._annealing_step(energy=energy, z=z)
+            diff_eng = pt.abs(eng.detach() - eng_old)
+
+            if epoch == 0:
+                history = eng.detach().view(1, eng.shape[0])
+            elif epoch % 100 == 0:
+                history = pt.cat((history, eng.detach().view(1, eng.shape[0])), dim=0)
+
+            eng_old = eng.detach()
+
+            plt.plot(n_z[0], label=eng[0].item())
+            plt.plot(self.n_target[idx], label=self.e_target[idx])
+            plt.legend()
+            plt.show()
+
+            self.beta = self.beta_ratio * self.beta
+            tqdm_bar.set_description(f"eng={eng.item()}")
+            tqdm_bar.refresh()
+
 
 #%%
 gd = GradientDescent(
+    annealing=True,
+    beta=1,
+    beta_final=500,
+    ann_step=1000,
     n_instances=1,
     loglr=3,
     cut=128,
     logdiffsoglia=-200,
     n_ensambles=1,
     target_path="data/final_dataset/data_test.npz",
-    model_name="emodel_20_hc_13_ks_2_ps",
-    epochs=100,
+    model_name="emodel_20_hc_13_ks_2_ps_16_ls_0.001_vb",
+    epochs=200,
     variable_lr=False,
     final_lr=1,
     early_stopping=False,
