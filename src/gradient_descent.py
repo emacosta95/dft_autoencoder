@@ -47,10 +47,6 @@ class GradientDescent:
         self,
         n_instances: int,
         loglr: int,
-        beta: float,
-        beta_ratio: float,
-        ann_step: int,
-        annealing: bool,
         cut: int,
         logdiffsoglia: int,
         n_ensambles: int,
@@ -68,16 +64,9 @@ class GradientDescent:
         device: str,
     ):
 
-        self.annealing = annealing
-
         self.device = device
         self.num_threads = num_threads
         self.seed = seed
-
-        if self.annealing:
-            self.beta = beta
-            self.beta_ratio = beta_ratio
-            self.ann_step = ann_step
 
         self.early_stopping = early_stopping
         self.variable_lr = variable_lr
@@ -117,14 +106,12 @@ class GradientDescent:
         self.min_hist = []
         self.min_exct_hist = []
         self.eng_model_ref = np.array([])
-        self.grads = np.array([])
 
         self.min_engs = {}
         self.min_ns = {}
         self.min_hist = {}
         self.min_exct_hist = {}
         self.eng_model_ref = {}
-        self.grads = {}
         self.min_z = {}
 
         self.epochs = epochs
@@ -222,7 +209,6 @@ class GradientDescent:
 
         # initialize the single gradient descent
 
-        n_ref = self.n_target[idx]
         pot = pt.tensor(self.v_target[idx], device=self.device)
         energy = Energy(model, pot, self.dx)
         energy = energy.to(device=self.device)
@@ -241,7 +227,7 @@ class GradientDescent:
         tqdm_bar = tqdm(range(self.epochs))
         for epoch in tqdm_bar:
 
-            eng, z, n_z, grad = self.gradient_descent_step(energy=energy, z=z)
+            eng, z, n_z = self.gradient_descent_step(energy=energy, z=z)
             diff_eng = pt.abs(eng.detach() - eng_old)
 
             if self.early_stopping:
@@ -264,7 +250,6 @@ class GradientDescent:
                     idx=idx,
                     history=history,
                     epoch=epoch,
-                    grad=grad,
                     z=z,
                 )
             tqdm_bar.set_description(f"eng={eng}")
@@ -292,85 +277,12 @@ class GradientDescent:
             eng.clone().detach(),
             z,
             n.detach().cpu().numpy(),
-            grad.detach().cpu().numpy(),
         )
-
-    def _ann_step(self, z: pt.Tensor, idx: int, energy: nn.Module):
-
-        for step in self.ann_step:
-
-            # new propose
-            new_z = pt.randn(self.latent_dimension, dtype=pt.double, device=self.device)
-
-            # compute the transition
-            # rate
-            logp_new = Normal(
-                pt.zeros(self.latent_dimension), pt.ones(self.latent_dimension)
-            ).log_prob(new_z)
-            logp_old = Normal(
-                pt.zeros(self.latent_dimension), pt.ones(self.latent_dimension)
-            ).log_prob(z)
-            ratio = logp_old - logp_new
-
-            # boltzmann
-            eng_new, _ = energy(new_z)
-            eng, n_z = energy(z)
-            delta_e = (eng_new - eng) * self.beta
-            ratio = ratio + delta_e
-
-            # random number
-            w = pt.rand(1)
-            if ratio.exp() > w:
-                z = new_z
-
-        return z, n_z.detach().cpu().numpy()
-
-    def annealing(self, z: pt.Tensor, idx: int, model: nn.Module) -> tuple:
-
-        # initialize the single gradient descent
-
-        n_ref = self.n_target[idx]
-        pot = pt.tensor(self.v_target[idx], device=self.device)
-        energy = Energy(model, pot, self.dx)
-        energy = energy.to(device=self.device)
-
-        history = pt.tensor([], device=self.device)
-        # exact_history = np.array([])
-        eng_old = pt.tensor(0, device=self.device)
-
-        tqdm_bar = tqdm(range(self.epochs))
-        for epoch in tqdm_bar:
-
-            eng, z, n_z = self._ann_step(energy=energy, z=z)
-            diff_eng = pt.abs(eng.detach() - eng_old)
-
-            if epoch == 0:
-                history = eng.detach().view(1, eng.shape[0])
-            elif epoch % 100 == 0:
-                history = pt.cat((history, eng.detach().view(1, eng.shape[0])), dim=0)
-
-            eng_old = eng.detach()
-
-            if epoch % 1000 == 0:
-                self.checkpoints(
-                    eng=eng,
-                    n_z=n_z,
-                    idx=idx,
-                    history=history,
-                    epoch=epoch,
-                    grad=None,
-                    z=z,
-                )
-
-            self.beta = self.beta_ratio * self.beta
-            tqdm_bar.set_description(f"eng={eng}")
-            tqdm_bar.refresh()
 
     def checkpoints(
         self,
         eng: np.array,
         n_z: np.array,
-        grad: np.array,
         idx: int,
         history: np.array,
         epoch: int,
@@ -416,8 +328,6 @@ class GradientDescent:
         # exact_eng_min = exact_eng.clone()[idx_min].cpu()
 
         n_z_min = n_z[idx_min]
-        if grad != None:
-            grad_min = grad[idx_min]
         history_min = history[:, idx_min]
         z_min = z[idx_min].detach().cpu().numpy()
 
@@ -437,13 +347,9 @@ class GradientDescent:
 
         if idx == 0:
             self.min_ns[epoch] = n_z_min
-            if grad != None:
-                self.grads[epoch] = grad_min
             self.min_z[epoch] = z_min
         else:
             self.min_ns[epoch] = np.vstack((self.min_ns[epoch], n_z_min))
-            if grad != None:
-                self.grads[epoch] = np.vstack((self.grads[epoch], grad_min))
 
         # save the numpy values
         if idx != 0:
@@ -457,10 +363,310 @@ class GradientDescent:
                 "gradient_descent_ensamble_numpy/min_density_" + session_name,
                 min_density=self.min_ns[epoch],
                 gs_density=self.n_target[0 : self.min_ns[epoch].shape[0]],
-                gradient=self.grads[epoch],
                 z=self.min_z[epoch],
             )
             np.savez(
                 "gradient_descent_ensamble_numpy/history_" + session_name,
                 history=self.min_hist[epoch],
+            )
+
+
+class SimulatedAnnealing:
+    def __init__(
+        self,
+        n_instances: int,
+        beta: float,
+        final_beta: float,
+        ann_step: int,
+        local: bool,
+        target_path: str,
+        model_name: str,
+        epochs: int,
+        L: int,
+        resolution: int,
+        latent_dimension: int,
+        seed: int,
+        num_threads: int,
+        device: str,
+        delta: float,
+    ):
+
+        self.device = device
+        self.num_threads = num_threads
+        self.seed = seed
+
+        self.beta = beta
+        self.beta_ratio = pt.exp((1 / epochs) * pt.log(pt.tensor(final_beta / beta)))
+        self.final_beta = final_beta
+        self.ann_step = ann_step
+        self.local = local
+        self.delta = delta
+
+        # two version for different operations
+        self.dx_torch = pt.tensor(L / resolution, dtype=pt.double, device=self.device)
+        self.dx = L / resolution
+        self.latent_dimension = latent_dimension
+
+        self.n_instances = n_instances
+
+        self.epochs = epochs
+        # fix to one
+        self.n_ensambles = 1
+
+        self.n_target = np.load(target_path)["density"]
+        self.v_target = np.load(target_path)["potential"]
+        self.e_target = np.load(target_path)["energy"]
+
+        self.model_name = model_name
+
+        # the set of the loaded data
+        self.min_engs = np.array([])
+        self.min_ns = np.array([])
+        self.hist = []
+        self.eng_model_ref = np.array([])
+        self.grads = np.array([])
+
+        self.min_engs = {}
+        self.min_ns = {}
+        self.min_hist = {}
+        self.min_exct_hist = {}
+        self.eng_model_ref = {}
+        self.grads = {}
+        self.min_z = {}
+
+        self.epochs = epochs
+
+    def run(self) -> None:
+        """This function runs the entire process of gradient descent for each instance."""
+
+        # select number of threads
+        pt.set_num_threads(self.num_threads)
+
+        # fix the seed
+        # Initialize the seed
+        pt.manual_seed(self.seed)
+        np.random.seed(self.seed)
+        random.seed(self.seed)
+
+        # loading the model
+        print("loading the model...")
+        model = pt.load(
+            "model_dft_pytorch/" + self.model_name,
+            map_location=pt.device(self.device),
+        )
+        model = model.to(device=self.device)
+        model.eval()
+
+        # starting the cycle for each instance
+        print("starting the cycle...")
+        for idx in trange(0, self.n_instances):
+
+            # initialize phi
+            z = self._initialize_z()
+            print(f"is leaf={z.is_leaf}")
+
+            # compute the gradient descent
+            # for a single target sample
+            history = self._single_annealing(z=z, idx=idx, model=model)
+
+            self.hist.append(history)
+
+            np.save(
+                f"simulated_annealing_numpy/histories/history_{self.model_name}_{self.epochs}_epochs_{self.ann_step}_ann_step_{self.beta}_beta_{self.final_beta}_final",
+                self.hist,
+            )
+
+    def _initialize_z(self) -> pt.tensor:
+        """This routine initialize the phis using the average decomposition of the dataset (up to now, the best initialization ever found)
+        Returns:
+            phi[pt.tensor]: [the initialized phis with non zero gradient]
+        """
+        # sqrt of the initial configuration
+        z = pt.randn((self.n_ensambles, self.latent_dimension))
+        # initialize in double and device
+        z = z.to(dtype=pt.double)
+        z = z.to(device=self.device)
+        # make it a leaft
+        z.requires_grad_(True)
+
+        return z
+
+    def _single_annealing(self, z: pt.Tensor, idx: int, model: nn.Module) -> tuple:
+
+        # initialize the single gradient descent
+
+        pot = pt.tensor(self.v_target[idx], device=self.device)
+        energy = Energy(model, pot, self.dx)
+        energy = energy.to(device=self.device)
+
+        history_sample = []
+        # exact_history = np.array([])
+        eng_old = pt.tensor(0, device=self.device)
+        beta = self.beta
+
+        tqdm_bar = tqdm(range(self.epochs))
+        if self.local:
+            n_z = None
+
+        for epoch in tqdm_bar:
+
+            if self.local:
+                eng, z, n_z, acc = self._ann_step_local(
+                    energy=energy, z=z, model=model, beta=beta
+                )
+            else:
+                eng, z, n_z, acc = self._ann_step_nonlocal(
+                    energy=energy, z=z, beta=beta
+                )
+            diff_eng = pt.abs(eng.detach() - eng_old)
+
+            history_sample.append(eng.item())
+
+            eng_old = eng.detach()
+
+            if epoch % 50 == 0:
+                self.checkpoints(
+                    eng=eng.detach(),
+                    n_z=n_z.detach().cpu().numpy(),
+                    idx=idx,
+                    epoch=epoch,
+                    z=z,
+                )
+
+            beta = self.beta_ratio * beta
+            tqdm_bar.set_description(f"eng={eng.item()},acc={acc}")
+            tqdm_bar.refresh()
+
+        return history_sample
+
+    def _ann_step_nonlocal(self, z: pt.Tensor, energy: nn.Module, beta: float):
+
+        count = 0
+        for step in range(self.ann_step):
+            # new propose
+            new_z = pt.randn(self.latent_dimension, dtype=pt.double, device=self.device)
+
+            # compute the transition
+            # boltzmann
+            eng_new, _ = energy(new_z)
+            eng, n_z = energy(z)
+            delta_e = (eng - eng_new) * beta
+            ratio = delta_e
+
+            # random number
+            w = pt.rand(1).to(device=self.device)
+            if ratio.exp() > w:
+                z = new_z
+                count += 1
+
+        return eng, z, n_z, count / self.ann_step
+
+    def _ann_step_local(
+        self,
+        z: pt.Tensor,
+        energy: nn.Module,
+        model: nn.Module,
+        beta: float,
+    ):
+
+        count = 0
+        for step in range(self.ann_step):
+
+            # energy of the old z
+            eng, n_z = energy(z)
+
+            # new local propose
+            new_z = Normal(z, self.delta).rsample().double()
+            new_z = new_z.to(device=self.device)
+
+            # compute the transition
+            # boltzmann
+            eng_new, n_z_new = energy(new_z)
+            delta_e = (eng - eng_new) * self.beta
+            ratio = delta_e
+
+            # norm
+            norm_check = pt.abs(1 - pt.sum(n_z_new, dim=1) * self.dx)
+
+            # random number
+            w = pt.rand(1).to(device=self.device)
+            if ratio.exp() > w and norm_check < 10 ** -3:
+                z = new_z
+                count += 1
+
+        return eng, z, n_z, count / self.ann_step
+
+    def checkpoints(
+        self,
+        eng: np.array,
+        n_z: np.array,
+        idx: int,
+        epoch: int,
+        z: pt.tensor,
+    ) -> None:
+        """This function is a checkpoint save.
+
+        Args:
+        eng[np.array]: the set of energies for each initial configuration obtained after the gradient descent
+        phi[pt.tensor]: the set of sqrt density profiles for each initial configuration obtained after the gradient descent
+        idx[int]: the index of the instance
+        history[np.array]: the history of the computed energies for each initial configuration
+        epoch[int]: the current epoch in which the data are saved
+        """
+
+        # initialize the filename
+        session_name = self.model_name
+
+        name_istances = f"number_istances_{self.n_instances}"
+        session_name = session_name + "_" + name_istances
+
+        n_initial_name = f"n_ensamble_{self.n_ensambles}_different_initial"
+        session_name = session_name + "_" + n_initial_name
+
+        epochs_name = f"epochs_{epoch}"
+        session_name = session_name + "_" + epochs_name
+
+        ann_name = f"_ann_step_{self.ann_step}"
+        session_name = session_name + ann_name
+
+        beta_name = f"_beta_{self.beta}_final_{self.final_beta}"
+        session_name = session_name + beta_name
+
+        # considering the minimum value
+        eng_min = pt.min(eng, axis=0)[0].cpu().numpy()
+        idx_min = pt.argmin(eng, axis=0)
+
+        # exact_eng_min = exact_eng.clone()[idx_min].cpu()
+
+        n_z_min = n_z[idx_min]
+        z_min = z[idx_min].detach().cpu().numpy()
+
+        # exact_history_min = exact_history[idx_min]
+        # append to the values
+        if idx == 0:
+            self.min_engs[epoch] = eng_min
+
+        else:
+            self.min_engs[epoch] = np.append(self.min_engs[epoch], eng_min)
+
+        # self.min_exct_hist.append(exact_history_min)
+
+        if idx == 0:
+            self.min_ns[epoch] = n_z_min
+            self.min_z[epoch] = z_min
+        else:
+            self.min_ns[epoch] = np.vstack((self.min_ns[epoch], n_z_min))
+
+        # save the numpy values
+        if idx != 0:
+            np.savez(
+                "simulated_annealing_numpy/data/eng_" + session_name,
+                min_energy=self.min_engs[epoch],
+                gs_energy=self.e_target[0 : (self.min_engs[epoch].shape[0])],
+            )
+            np.savez(
+                "simulated_annealing_numpy/data/density_" + session_name,
+                min_density=self.min_ns[epoch],
+                gs_density=self.n_target[0 : self.min_ns[epoch].shape[0]],
+                z=self.min_z[epoch],
             )

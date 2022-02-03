@@ -1,9 +1,8 @@
-from src.gradient_descent import GradientDescent
+from src.gradient_descent import SimulatedAnnealing
 import argparse
 import torch
 import numpy as np
 from src.training.utils import from_txt_to_bool
-
 
 parser = argparse.ArgumentParser()
 
@@ -17,48 +16,40 @@ parser.add_argument(
 parser.add_argument(
     "--n_instances", type=int, help="# of target samples (default=250)", default=250
 )
-
 parser.add_argument(
-    "--n_ensambles",
-    type=int,
-    help="# of the initial configuration (default=1)",
-    default=1,
-)
-
-parser.add_argument(
-    "--logdiffsoglia",
-    type=int,
-    help="The logarithm of the threshold value for the early stopping (default=-4)",
-    default=-4,
-)
-
-
-parser.add_argument(
-    "--final_lr",
+    "--beta",
     type=float,
-    help="learning rate at final epoch (dynamic) (default=10**-6)",
-    default=10 ** -6,
+    help="beta value (default=10)",
+    default=10,
+)
+
+
+parser.add_argument(
+    "--final_beta",
+    type=float,
+    help="final beta value (default=100)",
+    default=100,
 )
 
 parser.add_argument(
-    "--early_stopping",
-    type=bool,
-    help="if True set the early stopping option (default=False)",
-    default="False",
-)
-
-parser.add_argument(
-    "--variable_lr",
-    type=str,
-    help="True if the learning rate is dynamic (default=False)",
-    default="False",
-)
-
-parser.add_argument(
-    "--loglr",
+    "--ann_step",
     type=int,
-    help="The logarithm of the learning rate (default=-1)",
-    default=-1,
+    help="step of the simulated annealing for each fixed beta (default=100)",
+    default=100,
+)
+
+parser.add_argument(
+    "--local",
+    type=str,
+    help="True if the proposal is sampled by a local algorithm (default=False)",
+    default="False",
+)
+
+parser.add_argument(
+    "--delta",
+    type=float,
+    help="The average distance of the new sample (default=0.1)",
+    default=0.1,
 )
 
 parser.add_argument(
@@ -74,7 +65,7 @@ parser.add_argument(
     default="emodel_20_hc_13_ks_2_ps_16_ls_0.001_vb",
 )
 parser.add_argument(
-    "--epochs", type=int, help="# of epochs (default=15001)", default=15001
+    "--epochs", type=int, help="# of epochs (default=9000)", default=9000
 )
 
 parser.add_argument("--L", type=int, help="size of the system (default=14)", default=14)
@@ -105,18 +96,16 @@ parser.add_argument(
 args = parser.parse_args()
 
 
-gd = GradientDescent(
+ann = SimulatedAnnealing(
     n_instances=args.n_instances,
-    loglr=args.loglr,
-    cut=128,
-    logdiffsoglia=args.logdiffsoglia,
-    n_ensambles=args.n_ensambles,
+    beta=args.beta,
+    delta=args.delta,
+    final_beta=args.final_beta,
+    ann_step=args.ann_step,
+    local=from_txt_to_bool(args.local),
     target_path=args.target_path,
     model_name=args.model_name,
     epochs=args.epochs,
-    variable_lr=args.variable_lr,
-    final_lr=args.final_lr,
-    early_stopping=args.early_stopping,
     L=args.L,
     resolution=args.resolution,
     latent_dimension=args.latent_dimension,
@@ -125,5 +114,4 @@ gd = GradientDescent(
     device=args.device,
 )
 
-
-gd.run()
+ann.run()
