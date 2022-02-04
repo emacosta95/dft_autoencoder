@@ -542,7 +542,7 @@ class ResultsAnalysis:
                     plt.plot(
                         space,
                         self.min_n[i][j][k],
-                        label=f"min (de={self.min_eng[i][j][k]-self.gs_eng[i][j][k]:.3f}, {self.text[i][j]} )",
+                        label=f"min (de={self.min_eng[i][j][k]-self.gs_eng[i][j][k]:.3f},dn={np.sum(np.abs(self.min_n[i][j][k]-self.gs_n[i][j][k]))*self.dx}, {self.text[i][j]} )",
                         linewidth=4,
                         alpha=0.5,
                     )
