@@ -190,7 +190,7 @@ class GradientDescent:
         model = model.to(device=self.device)
         model.eval()
 
-        while norm_check < 0.001:
+        while norm_check > 0.01:
             # sqrt of the initial configuration
             z = pt.randn((self.n_ensambles, self.latent_dimension))
             # initialize in double and device
@@ -202,7 +202,7 @@ class GradientDescent:
             n_z = model.proposal(z)
             norm = pt.abs(pt.sum(n_z, dim=1) * self.dx - 1)
             norm_check = pt.max(norm)
-
+            print(norm_check.item())
         return z
 
     def _single_gradient_descent(
