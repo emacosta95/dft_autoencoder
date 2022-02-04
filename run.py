@@ -42,10 +42,18 @@ parser.add_argument(
 
 parser.add_argument(
     "--early_stopping",
-    type=bool,
+    type=str,
     help="if True set the early stopping option (default=False)",
     default="False",
 )
+
+parser.add_argument(
+    "--mu",
+    type=float,
+    help="Chemical potential for the normalization, softconstrain (default=100)",
+    default=100,
+)
+
 
 parser.add_argument(
     "--variable_lr",
@@ -114,15 +122,16 @@ gd = GradientDescent(
     target_path=args.target_path,
     model_name=args.model_name,
     epochs=args.epochs,
-    variable_lr=args.variable_lr,
+    variable_lr=from_txt_to_bool(args.variable_lr),
     final_lr=args.final_lr,
-    early_stopping=args.early_stopping,
+    early_stopping=from_txt_to_bool(args.early_stopping),
     L=args.L,
     resolution=args.resolution,
     latent_dimension=args.latent_dimension,
     seed=args.seed,
     num_threads=args.num_threads,
     device=args.device,
+    mu=args.mu,
 )
 
 

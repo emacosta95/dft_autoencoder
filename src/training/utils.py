@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import List, Dict, Tuple
 import numpy as np
 import argparse
 import torch as pt
@@ -108,6 +108,7 @@ class VaeLoss(nn.Module):
 class ResultsAnalysis:
     def __init__(
         self,
+        only_testing: bool,
         n_sample: List,
         n_instances: List,
         n_ensambles: List,
@@ -125,56 +126,59 @@ class ResultsAnalysis:
         self.dx = dx
 
         self.r_square_list = None
+        self.accuracy_vae = None
 
         self.min_eng = []
         self.gs_eng = []
         self.min_n = []
         self.gs_n = []
 
-        for i in range(len(n_sample)):
+        if not (only_testing):
 
-            x_min = []
-            x_gs = []
-            y_min = []
-            y_gs = []
+            for i in range(len(n_sample)):
 
-            for j in range(len(epochs[i])):
+                x_min = []
+                x_gs = []
+                y_min = []
+                y_gs = []
 
-                min_eng, gs_eng = dataloader(
-                    "energy",
-                    model_name=models_name[i][j],
-                    cut=128,
-                    n_instances=n_instances[i][j],
-                    lr=lr[i][j],
-                    diff_soglia=diff_soglia[i][j],
-                    n_ensambles=n_ensambles[i][j],
-                    epochs=epochs[i][j],
-                    early_stopping=early_stopping[i][j],
-                    variable_lr=variable_lr[i][j],
-                )
+                for j in range(len(epochs[i])):
 
-                min_n, gs_n = dataloader(
-                    "density",
-                    model_name=models_name[i][j],
-                    cut=128,
-                    n_instances=n_instances[i][j],
-                    lr=lr[i][j],
-                    diff_soglia=diff_soglia[i][j],
-                    n_ensambles=n_ensambles[i][j],
-                    epochs=epochs[i][j],
-                    early_stopping=early_stopping[i][j],
-                    variable_lr=variable_lr[i][j],
-                )
+                    min_eng, gs_eng = dataloader(
+                        "energy",
+                        model_name=models_name[i][j],
+                        cut=128,
+                        n_instances=n_instances[i][j],
+                        lr=lr[i][j],
+                        diff_soglia=diff_soglia[i][j],
+                        n_ensambles=n_ensambles[i][j],
+                        epochs=epochs[i][j],
+                        early_stopping=early_stopping[i][j],
+                        variable_lr=variable_lr[i][j],
+                    )
 
-                x_min.append(min_eng)
-                x_gs.append(gs_eng)
-                y_min.append(min_n)
-                y_gs.append(gs_n)
+                    min_n, gs_n = dataloader(
+                        "density",
+                        model_name=models_name[i][j],
+                        cut=128,
+                        n_instances=n_instances[i][j],
+                        lr=lr[i][j],
+                        diff_soglia=diff_soglia[i][j],
+                        n_ensambles=n_ensambles[i][j],
+                        epochs=epochs[i][j],
+                        early_stopping=early_stopping[i][j],
+                        variable_lr=variable_lr[i][j],
+                    )
 
-            self.min_eng.append(x_min)
-            self.gs_eng.append(x_gs)
-            self.min_n.append(y_min)
-            self.gs_n.append(y_gs)
+                    x_min.append(min_eng)
+                    x_gs.append(gs_eng)
+                    y_min.append(min_n)
+                    y_gs.append(gs_n)
+
+                self.min_eng.append(x_min)
+                self.gs_eng.append(x_gs)
+                self.min_n.append(y_min)
+                self.gs_n.append(y_gs)
 
     def _comparison(self):
 
@@ -217,10 +221,8 @@ class ResultsAnalysis:
 
             for j in range(len(self.min_eng[i])):
                 dns.append(
-                    np.sqrt(
-                        np.sum((self.min_n[i][j] - self.gs_n[i][j]) ** 2, axis=1) * dx
-                    )
-                    / np.sqrt(np.sum(self.min_n[i][j] ** 2, axis=1))
+                    np.sqrt(np.sum((self.min_n[i][j] - self.gs_n[i][j]) ** 2, axis=1))
+                    / np.sqrt(np.sum(self.gs_n[i][j] ** 2, axis=1))
                 )
                 dn_abs_error.append(
                     np.sum(np.abs(self.min_n[i][j] - self.gs_n[i][j]), axis=1) * dx
@@ -559,42 +561,84 @@ class ResultsAnalysis:
             plt.show()
 
     def histogram_plot(
-        self, idx: List, jdx: List, title: str, bins: int, density: bool
+        self,
+        idx: List,
+        jdx: List,
+        title: str,
+        bins: int,
+        density: bool,
+        alpha: float,
+        hatch: List,
+        color: List,
+        fill: List,
+        range_eng: Tuple,
+        range_n: Tuple,
     ):
-        fig = plt.figure(figsize=(5, 7))
-        plot = []
-        labels = []
-        for i in idx:
-            for j in jdx:
+        fig = plt.figure(figsize=(10, 10))
+        for eni, i in enumerate(idx):
+            for enj, j in enumerate(jdx):
                 dn = np.sqrt(
                     np.sum((self.min_n[i][j] - self.gs_n[i][j]) ** 2, axis=1)
                 ) / np.sqrt(np.sum(self.gs_n[i][j] ** 2, axis=1))
-                plot.append(dn)
-                labels.append(self.text[i][j])
-        plt.hist(plot, bins, label=labels, density=density)
-
+                plt.hist(
+                    dn,
+                    bins,
+                    label=self.text[i][j],
+                    range=range_n,
+                    alpha=alpha,
+                    hatch=hatch[eni][enj],
+                    fill=fill[eni][enj],
+                    color=color[eni][enj],
+                    histtype="step",
+                )
         plt.xlabel(r"$|\Delta n|/|n|$", fontsize=20)
-        plt.legend(fontsize=15)
+        plt.legend(fontsize=15, loc="best")
+        plt.tick_params(
+            top=True,
+            right=True,
+            labeltop=False,
+            labelright=False,
+            direction="in",
+            labelsize=15,
+            width=3,
+        )
         if title != None:
             plt.title(title)
         plt.show()
 
-        plot = []
-        labels = []
-        fig = plt.figure(figsize=(5, 7))
-        for i in idx:
-            for j in jdx:
+        fig = plt.figure(figsize=(10, 10))
+        for eni, i in enumerate(idx):
+            for enj, j in enumerate(jdx):
                 de = (self.min_eng[i][j] - self.gs_eng[i][j]) / self.gs_eng[i][j]
-                plot.append(de)
-                labels.append(self.text[i][j])
-        plt.hist(plot, bins, label=labels, density=density)
-        plt.xlabel(r"$|\Delta e|/|e|$", fontsize=20)
-        plt.legend(fontsize=15)
+                plt.hist(
+                    de,
+                    bins,
+                    label=self.text[i][j],
+                    density=density,
+                    alpha=alpha,
+                    range=range_eng,
+                    hatch=hatch[eni][enj],
+                    fill=fill[eni][enj],
+                    color=color[eni][enj],
+                    histtype="step",
+                )
+
+        plt.xlabel(r"$\Delta e/e$", fontsize=20)
+        plt.legend(fontsize=15, loc="upper left")
+        plt.tick_params(
+            top=True,
+            right=True,
+            labeltop=False,
+            labelright=False,
+            direction="in",
+            labelsize=15,
+            width=3,
+        )
         if title != None:
             plt.title(title)
         plt.show()
 
-    def test_models(self, idx: List, jdx: List, data_path: str):
+    def test_models_dft(self, idx: List, jdx: List, data_path: str):
         self.r_square_list = []
         r2 = R2Score()
 
@@ -619,6 +663,41 @@ class ResultsAnalysis:
 
                 self.r_square_list.append(r2.compute())
                 r2.reset()
+
+    def test_models_vae(self, idx: List, jdx: List, data_path: str):
+        self.accuracy_vae = []
+
+        n_std = np.load(data_path)["density"]
+        F_std = np.load(data_path)["F"]
+        ds = TensorDataset(pt.tensor(n_std).view(-1, 1, n_std.shape[-1]))
+        dl = DataLoader(ds, batch_size=100)
+        for i in idx:
+            for j in jdx:
+                model = pt.load(
+                    "model_dft_pytorch/" + self.models_name[i][j], map_location="cpu"
+                )
+                model.eval()
+                model = model.to(dtype=pt.double)
+                Dn = 0
+
+                for batch in dl:
+                    model.eval()
+                    mu, _ = model.Encoder(batch[0].double())
+                    n_recon = model.Decoder(mu)
+                    n_recon = n_recon.squeeze().detach().numpy()
+                    dn = np.sqrt(
+                        np.sum(
+                            (n_recon - batch[0].detach().squeeze().numpy()) ** 2, axis=1
+                        )
+                    ) / np.sqrt(
+                        np.sum((batch[0].detach().squeeze().numpy()) ** 2, axis=1)
+                    )
+                    Dn += np.average(dn)
+                print(model)
+                print(f"# parameters={count_parameters(model)}")
+                print(f"Dn={Dn/len(dl)} for {self.text[i][j]} \n")
+
+                self.accuracy_vae.append(Dn / len(dl))
 
 
 def dataloader(

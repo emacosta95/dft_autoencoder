@@ -376,11 +376,12 @@ class DFTVAE(nn.Module):
 
 
 class Energy(nn.Module):
-    def __init__(self, F_universal: nn.Module, v: torch.Tensor, dx: float):
+    def __init__(self, F_universal: nn.Module, v: torch.Tensor, dx: float, mu: float):
         super().__init__()
         self.model = F_universal
         self.v = v
         self.dx = dx
+        self.mu = mu
 
     def forward(self, z: torch.Tensor):
         """Value of the Energy function given the potential
@@ -392,5 +393,6 @@ class Energy(nn.Module):
         x, eng_1 = self.model(z)
         eng_1 = eng_1.view(x.shape[0])
         eng_2 = torch.einsum("ai,i->a", x, self.v) * self.dx
+        cons_1 = self.mu * (self.dx * (torch.sum(x, axis=1)) - 1) ** 2
         # eng_2 = pt.trapezoid(eng_2, dx=self.dx, dim=1)
-        return eng_1 + eng_2, x
+        return eng_1 + eng_2 + cons_1, eng_1 + eng_2, x

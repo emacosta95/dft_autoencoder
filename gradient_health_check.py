@@ -64,6 +64,7 @@ class GradientDescent:
         seed: int,
         num_threads: int,
         device: str,
+        mu: float,
     ):
 
         self.device = device
@@ -77,6 +78,7 @@ class GradientDescent:
         self.dx_torch = pt.tensor(L / resolution, dtype=pt.double, device=self.device)
         self.dx = L / resolution
         self.latent_dimension = latent_dimension
+        self.mu = mu
 
         self.n_instances = n_instances
 
@@ -169,7 +171,7 @@ class GradientDescent:
         n_ref = self.n_target[idx]
         n_ref = n_ref.reshape(1, 256)
 
-        energy = Energy(model, pt.tensor(pot, device=self.device), self.dx)
+        energy = Energy(model, pt.tensor(pot, device=self.device), self.dx, self.mu)
         energy.eval()
         eng = energy(pt.tensor(n_ref, device=self.device))
         self.eng_model_ref = np.append(self.eng_model_ref, eng.detach().cpu().numpy())
@@ -216,7 +218,7 @@ class GradientDescent:
 
         n_ref = self.n_target[idx]
         pot = pt.tensor(self.v_target[idx], device=self.device)
-        energy = Energy(model, pot, self.dx)
+        energy = Energy(model, pot, self.dx, self.mu)
         energy = energy.to(device=self.device)
 
         history = pt.tensor([], device=self.device)
@@ -260,7 +262,7 @@ class GradientDescent:
                 plt.plot(grad[0], label="grad")
                 plt.legend()
                 plt.show()
-            tqdm_bar.set_description(f"eng={eng}")
+            tqdm_bar.set_description(f"eng={eng}, norm={np.sum(n_z[0])*self.dx:.3f}")
             tqdm_bar.refresh()
 
     def gradient_descent_step(self, energy: nn.Module, z: pt.Tensor) -> tuple:
@@ -274,8 +276,8 @@ class GradientDescent:
             phi[pt.tensor]: [the wavefunction evaluated after the step]
         """
 
-        eng, n = energy(z)
-        eng.backward(pt.ones_like(eng))
+        eng_const, eng, n = energy(z)
+        eng_const.backward(pt.ones_like(eng_const))
 
         with pt.no_grad():
             grad = z.grad.clone()
@@ -301,7 +303,7 @@ gd = GradientDescent(
     logdiffsoglia=-200,
     n_ensambles=1,
     target_path="data/final_dataset/data_test.npz",
-    model_name="emodel_20_hc_13_ks_2_ps_16_ls_0.001_vb",
+    model_name="emodel_20_hc_13_ks_2_ps_16_ls_0.0001_vb",
     epochs=10000,
     variable_lr=False,
     final_lr=1,
@@ -312,6 +314,7 @@ gd = GradientDescent(
     seed=42,
     num_threads=1,
     device="cuda",
+    mu=100,
 )
 
 gd.run()

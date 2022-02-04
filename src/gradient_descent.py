@@ -62,6 +62,7 @@ class GradientDescent:
         seed: int,
         num_threads: int,
         device: str,
+        mu: float,
     ):
 
         self.device = device
@@ -75,6 +76,7 @@ class GradientDescent:
         self.dx_torch = pt.tensor(L / resolution, dtype=pt.double, device=self.device)
         self.dx = L / resolution
         self.latent_dimension = latent_dimension
+        self.mu = mu
 
         self.n_instances = n_instances
 
@@ -165,7 +167,7 @@ class GradientDescent:
         n_ref = self.n_target[idx]
         n_ref = n_ref.reshape(1, 256)
 
-        energy = Energy(model, pt.tensor(pot, device=self.device), self.dx)
+        energy = Energy(model, pt.tensor(pot, device=self.device), self.dx, self.mu)
         eng = energy(pt.tensor(n_ref, device=self.device))
         self.eng_model_ref = np.append(self.eng_model_ref, eng.detach().cpu().numpy())
 
@@ -178,13 +180,28 @@ class GradientDescent:
         Returns:
             phi[pt.tensor]: [the initialized phis with non zero gradient]
         """
-        # sqrt of the initial configuration
-        z = pt.randn((self.n_ensambles, self.latent_dimension))
-        # initialize in double and device
-        z = z.to(dtype=pt.double)
-        z = z.to(device=self.device)
-        # make it a leaft
-        z.requires_grad_(True)
+        norm_check = 1
+        # loading the model
+        print("loading the model...")
+        model = pt.load(
+            "model_dft_pytorch/" + self.model_name,
+            map_location=pt.device(self.device),
+        )
+        model = model.to(device=self.device)
+        model.eval()
+
+        while norm_check < 0.001:
+            # sqrt of the initial configuration
+            z = pt.randn((self.n_ensambles, self.latent_dimension))
+            # initialize in double and device
+            z = z.to(dtype=pt.double)
+            z = z.to(device=self.device)
+            # make it a leaft
+            z.requires_grad_(True)
+
+            n_z = model.proposal(z)
+            norm = pt.abs(pt.sum(n_z, dim=1) * self.dx - 1)
+            norm_check = pt.max(norm)
 
         return z
 
@@ -210,7 +227,7 @@ class GradientDescent:
         # initialize the single gradient descent
 
         pot = pt.tensor(self.v_target[idx], device=self.device)
-        energy = Energy(model, pot, self.dx)
+        energy = Energy(model, pot, self.dx, self.mu)
         energy = energy.to(device=self.device)
 
         history = pt.tensor([], device=self.device)
@@ -252,7 +269,9 @@ class GradientDescent:
                     epoch=epoch,
                     z=z,
                 )
-            tqdm_bar.set_description(f"eng={eng}")
+            tqdm_bar.set_description(
+                f"eng={pt.min(eng).item()},norm={np.sum(np.min(n_z,axis=0))*self.dx:.3f}"
+            )
             tqdm_bar.refresh()
 
     def gradient_descent_step(self, energy: nn.Module, z: pt.Tensor) -> tuple:
@@ -266,8 +285,8 @@ class GradientDescent:
             phi[pt.tensor]: [the wavefunction evaluated after the step]
         """
 
-        eng, n = energy(z)
-        eng.backward(pt.ones_like(eng))
+        eng_const, eng, n = energy(z)
+        eng_const.backward(pt.ones_like(eng_const))
 
         with pt.no_grad():
             grad = z.grad
@@ -364,10 +383,6 @@ class GradientDescent:
                 min_density=self.min_ns[epoch],
                 gs_density=self.n_target[0 : self.min_ns[epoch].shape[0]],
                 z=self.min_z[epoch],
-            )
-            np.savez(
-                "gradient_descent_ensamble_numpy/history_" + session_name,
-                history=self.min_hist[epoch],
             )
 
 
