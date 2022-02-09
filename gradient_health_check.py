@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from scipy import fft, ifft
 import random
 from torch.distributions.normal import Normal
+from src.training.utils import initial_ensamble_random
 
 
 device = pt.device("cuda" if pt.cuda.is_available() else "cpu")
@@ -77,6 +78,8 @@ class GradientDescent:
         # two version for different operations
         self.dx_torch = pt.tensor(L / resolution, dtype=pt.double, device=self.device)
         self.dx = L / resolution
+        self.l = L
+        self.resolution = resolution
         self.latent_dimension = latent_dimension
         self.mu = mu
 
@@ -185,6 +188,7 @@ class GradientDescent:
         Returns:
             phi[pt.tensor]: [the initialized phis with non zero gradient]
         """
+
         # sqrt of the initial configuration
         z = pt.randn((self.n_ensambles, self.latent_dimension))
         # initialize in double and device

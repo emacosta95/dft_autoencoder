@@ -221,36 +221,44 @@ class ResultsAnalysis:
 
             for j in range(len(self.min_eng[i])):
                 dns.append(
-                    np.sqrt(np.sum((self.min_n[i][j] - self.gs_n[i][j]) ** 2, axis=1))
-                    / np.sqrt(np.sum(self.gs_n[i][j] ** 2, axis=1))
+                    np.sqrt(
+                        np.trapz(
+                            (self.min_n[i][j] - self.gs_n[i][j]) ** 2,
+                            dx=self.dx,
+                            axis=1,
+                        )
+                    )
+                    / np.sqrt(np.trapz(self.gs_n[i][j] ** 2, dx=self.dx, axis=1))
                 )
                 dn_abs_error.append(
-                    np.sum(np.abs(self.min_n[i][j] - self.gs_n[i][j]), axis=1) * dx
+                    np.trapz(
+                        np.abs(self.min_n[i][j] - self.gs_n[i][j]), dx=self.dx, axis=1
+                    )
                 )
                 gradient_min_ns.append(
-                    dx
-                    * np.sum(
+                    np.trapz(
                         self.min_n[i][j]
                         * np.gradient(self.min_n[i][j], dx, axis=1) ** 2,
+                        dx=self.dx,
                         axis=1,
                     )
                 )
                 gradient_gs_ns.append(
-                    dx
-                    * np.sum(
+                    np.trapz(
                         self.gs_n[i][j] * np.gradient(self.gs_n[i][j], dx, axis=1) ** 2,
+                        dx=self.dx,
                         axis=1,
                     )
                 )
                 delta_gradient_ns.append(
                     (
-                        dx
-                        * np.sum(
+                        np.trapz(
                             (
                                 np.gradient(self.min_n[i][j], dx, axis=1)
                                 - np.gradient(self.gs_n[i][j], dx, axis=1)
                             )
                             ** 2,
+                            dx=self.dx,
                             axis=1,
                         )
                     )
@@ -328,7 +336,7 @@ class ResultsAnalysis:
         fig = plt.figure(figsize=(10, 10))
         for i, des in enumerate(self.list_de):
             plt.errorbar(
-                x=position,
+                x=position[i],
                 y=des,
                 yerr=self.list_devde[i] / np.sqrt(self.gs_eng[i][0].shape[0] - 1),
                 label=labels[i],
@@ -357,7 +365,7 @@ class ResultsAnalysis:
         fig = plt.figure(figsize=(10, 10))
         for i, devde in enumerate(self.list_devde):
             plt.plot(
-                position,
+                position[i],
                 devde,
                 label=labels[i],
                 linewidth=3,
@@ -385,7 +393,7 @@ class ResultsAnalysis:
         fig = plt.figure(figsize=(10, 10))
         for i, dn in enumerate(self.list_dn):
             plt.errorbar(
-                x=position,
+                x=position[i],
                 y=dn,
                 yerr=self.list_devdn[i] / np.sqrt(self.gs_eng[i][0].shape[0] - 1),
                 label=labels[i],
@@ -414,7 +422,7 @@ class ResultsAnalysis:
         fig = plt.figure(figsize=(10, 10))
         for i, dn in enumerate(self.list_abs_err_n):
             plt.errorbar(
-                x=position,
+                x=position[i],
                 y=dn,
                 yerr=self.list_devdn[i] / np.sqrt(self.gs_eng[i][0].shape[0] - 1),
                 label=labels[i],
@@ -440,7 +448,7 @@ class ResultsAnalysis:
 
         fig = plt.figure(figsize=(10, 10))
         for i, devdn in enumerate(self.list_devdn):
-            plt.plot(position, devdn, label=labels[i], linewidth=3)
+            plt.plot(position[i], devdn, label=labels[i], linewidth=3)
         plt.xlabel(xlabel, fontsize=20)
         plt.tick_params(
             top=True,
@@ -465,7 +473,7 @@ class ResultsAnalysis:
         fig = plt.figure(figsize=(10, 10))
         for i, des in enumerate(self.list_delta_e):
             plt.errorbar(
-                x=position,
+                x=position[i],
                 y=des,
                 yerr=self.list_delta_devde[i] / np.sqrt(self.gs_eng[i][0].shape[0] - 1),
                 label=labels[i],
@@ -490,7 +498,7 @@ class ResultsAnalysis:
         fig = plt.figure(figsize=(10, 10))
         for i, das in enumerate(self.list_delta_A):
             plt.errorbar(
-                x=position,
+                x=position[i],
                 y=das,
                 yerr=self.list_dev_A[i] / np.sqrt(self.gs_eng[i][0].shape[0] - 1),
                 label=labels[i],
@@ -516,7 +524,7 @@ class ResultsAnalysis:
 
         fig = plt.figure(figsize=(10, 10))
         for i, das in enumerate(self.list_R_square_energy):
-            plt.plot(position, das, label=labels[i], linewidth=3)
+            plt.plot(position[i], das, label=labels[i], linewidth=3)
         plt.ylabel(r"$R^2 energy$", fontsize=20)
         plt.xlabel(xlabel, fontsize=20)
         plt.xticks(ticks=xposition, labels=xticks)
@@ -578,13 +586,16 @@ class ResultsAnalysis:
         for eni, i in enumerate(idx):
             for enj, j in enumerate(jdx):
                 dn = np.sqrt(
-                    np.sum((self.min_n[i][j] - self.gs_n[i][j]) ** 2, axis=1)
-                ) / np.sqrt(np.sum(self.gs_n[i][j] ** 2, axis=1))
+                    np.trapz(
+                        (self.min_n[i][j] - self.gs_n[i][j]) ** 2, dx=self.dx, axis=1
+                    )
+                ) / np.sqrt(np.trapz(self.gs_n[i][j] ** 2, dx=self.dx, axis=1))
                 plt.hist(
                     dn,
                     bins,
                     label=self.text[i][j],
                     range=range_n,
+                    density=density,
                     alpha=alpha,
                     hatch=hatch[eni][enj],
                     fill=fill[eni][enj],
@@ -771,3 +782,99 @@ def dataloader(
         history_n = data["history_n"]
 
         return history, history_n
+
+
+def initial_ensamble_random(n_instances: int) -> pt.tensor:
+    """This function creates the ensamble of the initial density profiles from a dataset.
+    Those functions are average values of a number of subsets of the dataset.
+
+    Argument:
+
+    n: dataset in np.array
+    n_istances: number of subsets of the dataset.
+
+    Returns:
+
+    the tensor of the inital values as [n_istances,resolution] in np.array
+
+
+    """
+
+    np.random.seed(42)
+    pt.manual_seed(42)
+
+    L = 14
+
+    resolution = 256
+
+    dx = L / resolution
+
+    n_ensambles = pt.tensor([])
+
+    for j in range(int(n_instances)):
+
+        x = pt.linspace(0, L, resolution)
+
+        # the minimum value of sigma
+        # in order to avoid deltas
+        min_sigma = (L / 2) * 0.2
+
+        # generates 1, 2 or 3
+        # gaussians
+        if j < int(n_instances / 2):
+
+            # localized profiles
+            n_gauss = 1
+
+        else:
+
+            # delocalized profiles
+            n_gauss = 1
+
+        # generates n_gauss parameters
+        params = pt.rand(n_gauss)
+
+        # we need to create the rand
+        # before the cycle because
+        # the seed is fixed
+        sigma_rand = pt.rand(n_gauss)
+        shift_rand = pt.rand(n_gauss)
+
+        # initialize the sample
+        sample = pt.zeros(resolution)
+
+        for i in range(n_gauss):
+
+            # we define the sigma
+            sigma = (L / 2) * sigma_rand[i] + min_sigma
+
+            # the gaussian distribution
+            # centered in L/2
+            gauss = pt.exp((((-1 / (2 * sigma)) * ((L / 2) - x) ** 2)))
+
+            # define a random shift of
+            # the average value
+            shift = int(resolution * shift_rand[i])
+            gauss = pt.roll(gauss, shift)
+
+            # sum the gauss to the
+            # sample
+            sample = sample + params[i] * gauss
+
+        # normalize the sample
+        norm = pt.trapezoid(sample, dx=dx)
+        sample = sample / norm
+
+        # reshape to append
+        sample = sample.view(1, -1)
+
+        if j == 0:
+            # initial value
+            n_ensambles = sample
+
+        else:
+            # append the other
+            # values
+            n_ensambles = pt.cat((n_ensambles, sample), dim=0)
+
+    return n_ensambles

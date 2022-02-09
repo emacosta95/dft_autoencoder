@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from scipy import fft, ifft
 import random
 from torch.distributions.normal import Normal
-
+from src.training.utils import initial_ensamble_random
 
 device = pt.device("cuda" if pt.cuda.is_available() else "cpu")
 
@@ -181,6 +181,10 @@ class GradientDescent:
             phi[pt.tensor]: [the initialized phis with non zero gradient]
         """
         norm_check = 1
+
+        # generate a likewise density profiles
+        x_init = initial_ensamble_random(self.n_ensambles)
+
         # loading the model
         print("loading the model...")
         model = pt.load(
@@ -191,8 +195,10 @@ class GradientDescent:
         model.eval()
 
         while norm_check > 0.01:
-            # sqrt of the initial configuration
-            z = pt.randn((self.n_ensambles, self.latent_dimension))
+            # initial configuration from pseudo
+            # density profiles
+            z, _ = model.Encoder(x_init.unsqueeze(1).double().to(device=self.device))
+            z = z.squeeze(1).detach()
             # initialize in double and device
             z = z.to(dtype=pt.double)
             z = z.to(device=self.device)
@@ -202,7 +208,8 @@ class GradientDescent:
             n_z = model.proposal(z)
             norm = pt.abs(pt.sum(n_z, dim=1) * self.dx - 1)
             norm_check = pt.max(norm)
-            print(norm_check.item())
+            print(norm_check)
+
         return z
 
     def _single_gradient_descent(
@@ -269,9 +276,9 @@ class GradientDescent:
                     epoch=epoch,
                     z=z,
                 )
-            tqdm_bar.set_description(
-                f"eng={pt.min(eng).item()},norm={np.sum(np.min(n_z,axis=0))*self.dx:.3f}"
-            )
+            # tqdm_bar.set_description(
+            #     f"eng={pt.min(eng).item()},norm={np.sum(np.min(n_z,axis=0))*self.dx:.3f}"
+            # )
             tqdm_bar.refresh()
 
     def gradient_descent_step(self, energy: nn.Module, z: pt.Tensor) -> tuple:

@@ -75,6 +75,14 @@ parser.add_argument(
     help="name of the target dataset (default='data/final_dataset/data_test.npz')",
     default="data/final_dataset/data_test.npz",
 )
+
+parser.add_argument(
+    "--init_path",
+    type=str,
+    help="dataset path for the initial configurations (default='data/final_dataset/data_train.npz')",
+    default="data/final_dataset/data_train.npz",
+)
+
 parser.add_argument(
     "--model_name",
     type=str,
