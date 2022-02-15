@@ -105,6 +105,22 @@ class VaeLoss(nn.Module):
         return recon_loss + self.variational_beta * kldivergence, kldivergence
 
 
+class VaeLossMSE(nn.Module):
+    def __init__(self, variational_beta):
+
+        super().__init__()
+        self.variational_beta = variational_beta
+
+    def forward(self, recon_x, x, mu, logvar):
+        recon_loss = F.mse_loss(
+            recon_x.view(recon_x.shape[0], -1),
+            x.view(x.shape[0], -1),
+            reduction="sum",
+        )
+        kldivergence = -0.5 * pt.sum(1 + logvar - mu.pow(2) - logvar.exp())
+        return recon_loss + self.variational_beta * kldivergence, kldivergence
+
+
 class ResultsAnalysis:
     def __init__(
         self,
@@ -120,6 +136,7 @@ class ResultsAnalysis:
         early_stopping: List,
         lr: List,
         dx: float,
+        postnormalization: bool,
     ):
         self.models_name = models_name
         self.text = text
@@ -132,6 +149,7 @@ class ResultsAnalysis:
         self.gs_eng = []
         self.min_n = []
         self.gs_n = []
+        self.min_z = []
 
         if not (only_testing):
 
@@ -141,6 +159,7 @@ class ResultsAnalysis:
                 x_gs = []
                 y_min = []
                 y_gs = []
+                z_min = []
 
                 for j in range(len(epochs[i])):
 
@@ -157,7 +176,7 @@ class ResultsAnalysis:
                         variable_lr=variable_lr[i][j],
                     )
 
-                    min_n, gs_n = dataloader(
+                    min_n, gs_n, z = dataloader(
                         "density",
                         model_name=models_name[i][j],
                         cut=128,
@@ -170,15 +189,21 @@ class ResultsAnalysis:
                         variable_lr=variable_lr[i][j],
                     )
 
+                    if postnormalization:
+                        norm = np.sum(min_n, axis=1) * dx
+                        min_n = min_n / norm[:, None]
+
                     x_min.append(min_eng)
                     x_gs.append(gs_eng)
                     y_min.append(min_n)
                     y_gs.append(gs_n)
+                    z_min.append(z)
 
                 self.min_eng.append(x_min)
                 self.gs_eng.append(x_gs)
                 self.min_n.append(y_min)
                 self.gs_n.append(y_gs)
+                self.min_z.append(z_min)
 
     def _comparison(self):
 
@@ -541,30 +566,54 @@ class ResultsAnalysis:
         plt.title(title)
         plt.show()
 
-    def plot_samples(self, idx: List, jdx: List, n_samples: int, title: str, l: float):
+    def plot_samples(
+        self,
+        style: list,
+        idx: List,
+        jdx: List,
+        n_samples: int,
+        title: str,
+        l: float,
+        v: np.array,
+    ):
+
         space = np.linspace(0, l, self.min_n[0][0].shape[1])
         for k in range(n_samples):
+
             fig = plt.figure(figsize=(10, 10))
+            ax1 = fig.add_subplot()
+            ax2 = ax1.twinx()
+
             for i in idx:
                 for j in jdx:
-                    plt.plot(
+                    ax1.plot(
                         space,
                         self.min_n[i][j][k],
-                        label=f"min (de={self.min_eng[i][j][k]-self.gs_eng[i][j][k]:.3f},dn={np.sum(np.abs(self.min_n[i][j][k]-self.gs_n[i][j][k]))*self.dx}, {self.text[i][j]} )",
+                        label=f"min (de={self.min_eng[i][j][k]-self.gs_eng[i][j][k]:.3f},dn={np.sum(np.abs(self.min_n[i][j][k]-self.gs_n[i][j][k]))*self.dx:.3f},norm={np.sum(self.min_n[i][j][k])*self.dx:.3f} {self.text[i][j]} )",
                         linewidth=4,
-                        alpha=0.5,
+                        linestyle=style[i],
+                        alpha=0.8,
                     )
-            plt.plot(
+            ax1.plot(
                 space,
                 self.gs_n[0][0][k],
-                linestyle="--",
-                alpha=0.5,
+                linestyle=":",
+                alpha=1,
                 linewidth=5,
+                label="ground state",
+            )
+            ax2.plot(
+                space,
+                v[k],
+                color="black",
+                alpha=1,
+                linewidth=3,
                 label="ground state",
             )
             plt.xlabel("x", fontsize=20)
             plt.ylabel(r"$n(x)$", fontsize=20)
-            plt.legend(fontsize=15)
+            ax1.legend(fontsize=15)
+            ax2.legend(fontsize=15)
             plt.title(title)
             plt.show()
 
@@ -675,13 +724,15 @@ class ResultsAnalysis:
                 self.r_square_list.append(r2.compute())
                 r2.reset()
 
-    def test_models_vae(self, idx: List, jdx: List, data_path: str):
+    def test_models_vae(
+        self, idx: List, jdx: List, data_path: str, batch_size: int, plot: bool
+    ):
         self.accuracy_vae = []
 
         n_std = np.load(data_path)["density"]
         F_std = np.load(data_path)["F"]
         ds = TensorDataset(pt.tensor(n_std).view(-1, 1, n_std.shape[-1]))
-        dl = DataLoader(ds, batch_size=100)
+        dl = DataLoader(ds, batch_size=batch_size)
         for i in idx:
             for j in jdx:
                 model = pt.load(
@@ -691,11 +742,18 @@ class ResultsAnalysis:
                 model = model.to(dtype=pt.double)
                 Dn = 0
 
-                for batch in dl:
+                for k, batch in enumerate(dl):
                     model.eval()
                     mu, _ = model.Encoder(batch[0].double())
                     n_recon = model.Decoder(mu)
                     n_recon = n_recon.squeeze().detach().numpy()
+                    if plot:
+                        plt.plot(
+                            batch[0][0].detach().squeeze().numpy(), label="original"
+                        )
+                        plt.plot(n_recon[0], label="reconstruction")
+                        plt.legend(fontsize=20)
+                        plt.show()
                     dn = np.sqrt(
                         np.sum(
                             (n_recon - batch[0].detach().squeeze().numpy()) ** 2, axis=1
@@ -704,11 +762,44 @@ class ResultsAnalysis:
                         np.sum((batch[0].detach().squeeze().numpy()) ** 2, axis=1)
                     )
                     Dn += np.average(dn)
+
                 print(model)
                 print(f"# parameters={count_parameters(model)}")
                 print(f"Dn={Dn/len(dl)} for {self.text[i][j]} \n")
-
                 self.accuracy_vae.append(Dn / len(dl))
+
+    def z_analysis(self, idx: list, jdx: list):
+
+        dn_i = []
+        for i in idx:
+            dn_j = []
+            for j in jdx:
+                # load the model
+                model = pt.load(
+                    "model_dft_pytorch/" + self.models_name[i][j], map_location="cpu"
+                )
+                model.eval()
+                model = model.to(dtype=pt.double)
+
+                z_min, _ = model.Encoder(
+                    pt.tensor(self.min_n[i][j]).double().unsqueeze(1)
+                )
+                z_min = z_min.squeeze()
+                z_gs, _ = model.Encoder(
+                    pt.tensor(self.gs_n[i][j]).double().unsqueeze(1)
+                )
+                z_gs = z_gs.squeeze()
+                dz = (
+                    pt.linalg.norm(z_min - z_gs[: z_min.shape[0]], dim=1)
+                    .detach()
+                    .numpy()
+                    / pt.linalg.norm(z_gs[: z_min.shape[0]]).detach().numpy()
+                )
+                dn_j.append(dz)
+
+            dn_i.append(dn_j)
+
+        return dn_i
 
 
 def dataloader(
@@ -755,7 +846,8 @@ def dataloader(
 
         min_n = data["min_density"]
         gs_n = data["gs_density"]
-        return min_n, gs_n
+        z = data["z"]
+        return min_n, gs_n, z
 
     elif type == "energy":
 

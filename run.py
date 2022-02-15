@@ -50,8 +50,8 @@ parser.add_argument(
 parser.add_argument(
     "--mu",
     type=float,
-    help="Chemical potential for the normalization, softconstrain (default=100)",
-    default=100,
+    help="Chemical potential for the normalization, softconstrain (default=None)",
+    default=None,
 )
 
 
@@ -120,6 +120,7 @@ parser.add_argument(
 
 args = parser.parse_args()
 
+print(args)
 
 gd = GradientDescent(
     n_instances=args.n_instances,
@@ -140,6 +141,7 @@ gd = GradientDescent(
     num_threads=args.num_threads,
     device=args.device,
     mu=args.mu,
+    init_path=args.init_path,
 )
 
 

@@ -151,6 +151,80 @@ class Decode(nn.Module):
         return z
 
 
+class DecodeNorm(nn.Module):
+    def __init__(
+        self,
+        latent_dimension: int,
+        hidden_channels: int,
+        output_channels: int,
+        output_size: int,
+        padding: int,
+        padding_mode: str,
+        kernel_size: int,
+        pooling_size: int,
+        dx: float,
+    ):
+        super().__init__()
+
+        self.output_size = output_size
+        self.pooling_size = pooling_size
+        self.dx = dx
+
+        self.recon_block = nn.Sequential(
+            nn.Linear(
+                latent_dimension,
+                int(output_size / (pooling_size) ** 3) * hidden_channels,
+            ),
+        )
+        self.block_conv1 = nn.Sequential(
+            nn.ConvTranspose1d(
+                in_channels=hidden_channels,
+                out_channels=hidden_channels,
+                kernel_size=kernel_size + 1,
+                stride=2,
+                padding=padding,
+            ),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_channels),
+        )
+        self.block_conv2 = nn.Sequential(
+            nn.ConvTranspose1d(
+                in_channels=hidden_channels,
+                out_channels=hidden_channels,
+                kernel_size=kernel_size + 1,
+                stride=2,
+                padding=padding,
+            ),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_channels),
+        )
+        self.block_conv3 = nn.Sequential(
+            nn.ConvTranspose1d(
+                in_channels=hidden_channels,
+                out_channels=output_channels,
+                kernel_size=kernel_size + 1,
+                stride=2,
+                padding=padding,
+            ),
+        )
+        self.hidden_channel = hidden_channels
+
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
+        z = self.recon_block(z)
+        z = z.view(
+            -1, self.hidden_channel, int(self.output_size / (self.pooling_size ** 3))
+        )
+        z = self.block_conv1(z)
+        z = self.block_conv2(z)
+        z = self.block_conv3(z)
+        z = torch.sigmoid(z)
+        # normalization
+        # condition
+        norm = torch.sum(z, dim=2) * self.dx
+        z = z / norm[:, :, None]
+        return z
+
+
 class VarAE(nn.Module):
     def __init__(
         self,
@@ -375,6 +449,111 @@ class DFTVAE(nn.Module):
         return r2
 
 
+class DFTVAEnorm(nn.Module):
+    def __init__(
+        self,
+        latent_dimension: int,
+        hidden_channels: int,
+        input_channels: int,
+        input_size: int,
+        padding: int,
+        padding_mode: str,
+        kernel_size: int,
+        pooling_size: int,
+        loss_generative: nn.Module,
+        loss_dft: nn.Module,
+        output_size: int,
+        dx: float,
+    ):
+
+        super().__init__()
+
+        self.loss_generative = loss_generative
+        self.loss_dft = loss_dft
+
+        self.Encoder = Encode(
+            latent_dimension=latent_dimension,
+            hidden_channels=hidden_channels,
+            input_channels=input_channels,
+            padding=padding,
+            padding_mode=padding_mode,
+            kernel_size=kernel_size,
+            input_size=input_size,
+            pooling_size=pooling_size,
+        )
+        self.Decoder = DecodeNorm(
+            latent_dimension=latent_dimension,
+            hidden_channels=hidden_channels,
+            output_channels=input_channels,
+            padding=padding,
+            padding_mode=padding_mode,
+            kernel_size=kernel_size,
+            output_size=input_size,
+            pooling_size=pooling_size,
+            dx=dx,
+        )
+        self.DFTModel = Pilati_model_3_layer(
+            input_size=input_size,
+            input_channel=input_channels,
+            hidden_channel=hidden_channels,
+            padding=padding,
+            padding_mode=padding_mode,
+            kernel_size=kernel_size,
+            pooling_size=pooling_size,
+            output_size=output_size,
+        )
+
+    def forward(self, z: torch.Tensor):
+        x = self.Decoder(z)
+        f = self.DFTModel(x)
+        x = x.view(x.shape[0], -1)
+        return x, f
+
+    def proposal(self, z: torch.Tensor):
+        x = self.Decoder(z)
+        x = x.view(x.shape[0], -1)
+        return x
+
+    def functional(self, x: torch.Tensor):
+        x = x.unsqueeze(1)
+        return self.DFTModel(x)
+
+    def _latent_sample(self, mu, logvar):
+        if self.training:
+            # the reparameterization trick
+            std = (logvar * 0.5).exp()
+            return torch.distributions.Normal(loc=mu, scale=std).rsample()
+            # std = logvar.mul(0.5).exp_()
+            # eps = torch.empty_like(std).normal_()
+            # return eps.mul(std).add_(mu)
+        else:
+            return mu
+
+    def train_generative_step(self, batch: Tuple, device: str):
+        x = batch[0]
+        x = x.unsqueeze(1).to(device=device)
+        latent_mu, latent_logvar = self.Encoder(x)
+        latent = self._latent_sample(latent_mu, latent_logvar)
+        x_recon = self.Decoder(latent)
+        loss, kldiv = self.loss_generative(x_recon, x, latent_mu, latent_logvar)
+        return loss, kldiv.item()
+
+    def fit_dft_step(self, batch: Tuple, device: str):
+        x, y = batch
+        x = x.unsqueeze(1).to(device=device)
+        y = y.to(device=device)
+        x = self.DFTModel(x).squeeze()
+        loss = self.loss_dft(x, y)
+        return loss
+
+    def r2_computation(self, batch: Tuple, device: str, r2):
+        x, y = batch
+        x = x.unsqueeze(1).to(device=device)
+        x = self.DFTModel(x).to(device=device).squeeze()
+        r2.update(x.cpu().detach(), y.cpu().detach())
+        return r2
+
+
 class Energy(nn.Module):
     def __init__(self, F_universal: nn.Module, v: torch.Tensor, dx: float, mu: float):
         super().__init__()
@@ -393,6 +572,11 @@ class Energy(nn.Module):
         x, eng_1 = self.model(z)
         eng_1 = eng_1.view(x.shape[0])
         eng_2 = torch.einsum("ai,i->a", x, self.v) * self.dx
-        cons_1 = self.mu * (self.dx * (torch.sum(x, axis=1)) - 1) ** 2
+        norm = torch.sum(x, axis=1) * self.dx
         # eng_2 = pt.trapezoid(eng_2, dx=self.dx, dim=1)
-        return eng_1 + eng_2 + cons_1, eng_1 + eng_2, x
+        return eng_1 + eng_2, norm, x
+
+    def soft_constrain(self, z: torch.Tensor):
+        eng, norm, x = self.forward(z)
+        cons = self.mu * (norm - 1) ** 2
+        return eng + cons, eng, x

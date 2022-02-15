@@ -4,12 +4,13 @@ import torch as pt
 import numpy as np
 from torch.nn.modules import pooling
 from tqdm import tqdm, trange
-from src.model import DFTVAE
+from src.model import DFTVAE, DFTVAEnorm
 from src.training.utils import (
     make_data_loader,
     get_optimizer,
     count_parameters,
     VaeLoss,
+    VaeLossMSE,
     from_txt_to_bool,
 )
 from src.training.train_module import fit
@@ -227,7 +228,7 @@ def main(args):
     # Set the dataset path
     file_name = args.data_path
 
-    loss_func = VaeLoss(variational_beta=args.loss_parameter)
+    loss_func = VaeLossMSE(variational_beta=args.loss_parameter)
 
     if args.load:
 
@@ -268,7 +269,7 @@ def main(args):
         history_valid = []
         history_train = []
 
-        model = DFTVAE(
+        model = DFTVAEnorm(
             input_size=input_size,
             latent_dimension=args.latent_dimension,
             loss_generative=loss_func,
@@ -280,6 +281,8 @@ def main(args):
             padding_mode=padding_mode,
             pooling_size=pooling_size,
             output_size=output_size,
+            # only provisional
+            dx=14 / 256,
         )
 
     model = model.to(pt.double)

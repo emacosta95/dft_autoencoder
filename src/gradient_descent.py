@@ -63,6 +63,7 @@ class GradientDescent:
         num_threads: int,
         device: str,
         mu: float,
+        init_path: str,
     ):
 
         self.device = device
@@ -94,6 +95,7 @@ class GradientDescent:
         self.n_target = np.load(target_path)["density"]
         self.v_target = np.load(target_path)["potential"]
         self.e_target = np.load(target_path)["energy"]
+        self.init_path = init_path
 
         self.model_name = model_name
 
@@ -183,7 +185,16 @@ class GradientDescent:
         norm_check = 1
 
         # generate a likewise density profiles
-        x_init = initial_ensamble_random(self.n_ensambles)
+        ns = np.load(self.init_path)["density"]
+        ns = pt.tensor(ns, dtype=pt.double)
+        for i in range(20):
+
+            idx = pt.randint(0, ns.shape[0], size=(1,))
+
+            if i == 0:
+                x_init = ns[idx].view(1, -1)
+            else:
+                x_init = pt.cat((x_init, ns[idx].view(1, -1)), dim=0)
 
         # loading the model
         print("loading the model...")
@@ -197,7 +208,7 @@ class GradientDescent:
         while norm_check > 0.01:
             # initial configuration from pseudo
             # density profiles
-            z, _ = model.Encoder(x_init.unsqueeze(1).double().to(device=self.device))
+            z, _ = model.Encoder(x_init.unsqueeze(1).to(device=self.device))
             z = z.squeeze(1).detach()
             # initialize in double and device
             z = z.to(dtype=pt.double)
@@ -209,6 +220,8 @@ class GradientDescent:
             norm = pt.abs(pt.sum(n_z, dim=1) * self.dx - 1)
             norm_check = pt.max(norm)
             print(norm_check)
+
+        print(z.shape)
 
         return z
 
@@ -251,7 +264,11 @@ class GradientDescent:
         tqdm_bar = tqdm(range(self.epochs))
         for epoch in tqdm_bar:
 
-            eng, z, n_z = self.gradient_descent_step(energy=energy, z=z)
+            if self.mu != None:
+                eng, z, n_z = self._step_soft(energy=energy, z=z)
+            else:
+                eng, z, n_z = self._step_hard(energy=energy, z=z)
+
             diff_eng = pt.abs(eng.detach() - eng_old)
 
             if self.early_stopping:
@@ -276,12 +293,14 @@ class GradientDescent:
                     epoch=epoch,
                     z=z,
                 )
-            # tqdm_bar.set_description(
-            #     f"eng={pt.min(eng).item()},norm={np.sum(np.min(n_z,axis=0))*self.dx:.3f}"
-            # )
+
+            idxmin = pt.argmin(eng)
+            tqdm_bar.set_description(
+                f"eng={(eng[idxmin]).item():.3f},norm={np.sum(n_z[idxmin],axis=0)*self.dx:.3f}"
+            )
             tqdm_bar.refresh()
 
-    def gradient_descent_step(self, energy: nn.Module, z: pt.Tensor) -> tuple:
+    def _step_soft(self, energy: nn.Module, z: pt.Tensor) -> tuple:
         """This routine computes the step of the gradient using both the positivity and the nomralization constrain
         Arguments:
         energy[nn.Module]: [the energy functional]
@@ -292,13 +311,74 @@ class GradientDescent:
             phi[pt.tensor]: [the wavefunction evaluated after the step]
         """
 
-        eng_const, eng, n = energy(z)
+        eng_const, eng, n = energy.soft_constrain(z)
         eng_const.backward(pt.ones_like(eng_const))
 
         with pt.no_grad():
             grad = z.grad
             z -= self.lr * (grad)
             z.grad.zero_()
+        return (
+            eng.clone().detach(),
+            z,
+            n.detach().cpu().numpy(),
+        )
+
+    def _step(self, energy: nn.Module, z: pt.Tensor) -> tuple:
+        """This routine computes the step of the gradient using both the positivity and the nomralization constrain
+        Arguments:
+        energy[nn.Module]: [the energy functional]
+        phi[pt.tensor]: [the sqrt of the density profile]
+
+        Returns:
+            eng[pt.tensor]: [the energy value computed before the step]
+            phi[pt.tensor]: [the wavefunction evaluated after the step]
+        """
+
+        _, eng, n = energy.soft_constrain(z)
+        eng.backward(pt.ones_like(eng))
+
+        with pt.no_grad():
+            grad = z.grad
+            z -= self.lr * (grad)
+            z.grad.zero_()
+        return (
+            eng.clone().detach(),
+            z,
+            n.detach().cpu().numpy(),
+        )
+
+    def _step_hard(self, energy: nn.Module, z: pt.Tensor) -> tuple:
+        """This routine computes the step of the gradient using both the positivity and the nomralization constrain
+        Arguments:
+        energy[nn.Module]: [the energy functional]
+        phi[pt.tensor]: [the sqrt of the density profile]
+
+        Returns:
+            eng[pt.tensor]: [the energy value computed before the step]
+            phi[pt.tensor]: [the wavefunction evaluated after the step]
+        """
+
+        eng, norm, n = energy(z)
+        eng.backward(pt.ones_like(eng), retain_graph=True)
+
+        with pt.no_grad():
+            grad_e = z.grad.clone()
+            z.grad.zero_()
+
+        norm.backward(pt.ones_like(norm))
+
+        with pt.no_grad():
+            grad_n = z.grad.clone()
+            z.grad.zero_()
+
+            # chemical potential with the low grad_e
+            # approximation
+            mu = pt.einsum("ai,ai->a", grad_n, grad_e) / pt.einsum(
+                "ai,ai->a", grad_n, grad_n
+            )
+            z -= self.lr * (grad_e - mu[:, None] * grad_n)
+
         return (
             eng.clone().detach(),
             z,
