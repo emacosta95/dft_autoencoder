@@ -187,7 +187,7 @@ class GradientDescent:
         # generate a likewise density profiles
         ns = np.load(self.init_path)["density"]
         ns = pt.tensor(ns, dtype=pt.double)
-        for i in range(20):
+        for i in range(self.n_ensambles):
 
             idx = pt.randint(0, ns.shape[0], size=(1,))
 

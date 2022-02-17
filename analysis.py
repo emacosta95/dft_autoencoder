@@ -30,7 +30,7 @@ lr = None
 only_testing = True
 
 #%% Gradient descent
-hparam = [100, 102]
+hparam = [1]
 n_hc = len(hparam)
 labels = [f"instances={init}" for init in hparam]
 yticks = {
@@ -43,13 +43,13 @@ xticks = [i * 3000 for i in range(11)]
 
 n_sample = 31
 n_hc = len(hparam)
-n_instances = [[102] * n_sample, [100] * n_sample]
-n_ensambles = [[1] * n_sample] * n_hc
+n_instances = [[104] * n_sample]
+n_ensambles = [[1] * n_sample, [20] * n_sample]
 epochs = [
     [i * 1000 for i in range(n_sample)],
 ] * n_hc
 diff_soglia = [[1] * n_sample] * n_hc
-models_name = [[f"emodelMSE_20_hc_13_ks_2_ps_16_ls_{v}_vb"] * n_sample for v in hparam]
+models_name = [[f"normMSE_60_hc_13_ks_2_ps_16_ls_1e-06_vb"] * n_sample for v in hparam]
 text = [
     [f"mode={label} epochs={epoch}" for epoch in epochs[i]]
     for i, label in enumerate(labels)
@@ -64,7 +64,7 @@ n_sample = [n_sample] * n_hc
 only_testing = False
 
 # Histogram settings
-idx = [0, 1, 2]
+idx = [0]
 jdx = [30]
 hatch = [["."], ["None"], ["//"]]
 color = [["black"], ["red"], ["green"]]
@@ -135,11 +135,9 @@ ra.test_models_vae(
 
 # %%
 
-idx = [0, 1, 2]
+idx = [0]
 
-ra.plot_samples(
-    style=["-", "-", "-"], idx=idx, jdx=[30], n_samples=100, title=None, l=14, v=v
-)
+ra.plot_samples(style=["-"], idx=idx, jdx=[30], n_samples=100, title=None, l=14, v=v)
 
 # %% study the latent space
 from src.training.utils import initial_ensamble_random
