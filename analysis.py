@@ -6,16 +6,15 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 
-#%%
 data = np.load("data/final_dataset/data_test.npz")
 
 v = data["potential"]
 
 
 #%% only for testing
-vb = [10 ** -6]
+vb = [10 ** -9]
 
-models_name = [[f"normMSE_60_hc_13_ks_2_ps_16_ls_{v}_vb" for v in vb]]
+models_name = [[f"normMSE_20_hc_13_ks_2_ps_16_ls_{v}_vb" for v in vb]]
 
 n_sample = len(vb)
 n_ensambles = None
@@ -30,7 +29,7 @@ lr = None
 only_testing = True
 
 #%% Gradient descent
-hparam = [1]
+hparam = [1, 20]
 n_hc = len(hparam)
 labels = [f"instances={init}" for init in hparam]
 yticks = {
@@ -43,13 +42,13 @@ xticks = [i * 3000 for i in range(11)]
 
 n_sample = 31
 n_hc = len(hparam)
-n_instances = [[104] * n_sample]
-n_ensambles = [[1] * n_sample, [20] * n_sample]
+n_instances = [[104] * n_sample] * n_hc
+n_ensambles = [[n_init] * n_sample for n_init in hparam]
 epochs = [
     [i * 1000 for i in range(n_sample)],
 ] * n_hc
 diff_soglia = [[1] * n_sample] * n_hc
-models_name = [[f"normMSE_60_hc_13_ks_2_ps_16_ls_1e-06_vb"] * n_sample for v in hparam]
+models_name = [[f"normMSE_20_hc_13_ks_2_ps_16_ls_0.001_vb"] * n_sample for v in hparam]
 text = [
     [f"mode={label} epochs={epoch}" for epoch in epochs[i]]
     for i, label in enumerate(labels)
@@ -63,8 +62,8 @@ n_sample = [n_sample] * n_hc
 
 only_testing = False
 
-# Histogram settings
-idx = [0]
+#%% Histogram settings
+idx = [0, 1]
 jdx = [30]
 hatch = [["."], ["None"], ["//"]]
 color = [["black"], ["red"], ["green"]]
@@ -133,17 +132,22 @@ ra.test_models_vae(
     idx, jdx, "data/final_dataset/data_test.npz", batch_size=100, plot=False
 )
 
+#%%
+ra.min_n[0][0].shape
+
 # %%
 
-idx = [0]
+idx = [0, 1]
 
-ra.plot_samples(style=["-"], idx=idx, jdx=[30], n_samples=100, title=None, l=14, v=v)
+ra.plot_samples(
+    style=["-", "--"], idx=idx, jdx=[30], n_samples=10, title=None, l=14, v=v
+)
 
 # %% study the latent space
 from src.training.utils import initial_ensamble_random
 
 model = torch.load(
-    "model_dft_pytorch/emodel_60_hc_13_ks_2_ps_16_ls_1e-06_vb", map_location="cpu"
+    "model_dft_pytorch/normMSE_20_hc_13_ks_2_ps_16_ls_0.001_vb", map_location="cpu"
 )
 model = model.double()
 model.eval()
@@ -173,8 +177,10 @@ for i in range(20):
 
 # %%
 dz = ra.z_analysis([0, 1], [-1])
-dz[0][0].shape
-plt.hist((dz[0][0], dz[1][0]), bins=10, label=["hard", "soft"], density=True)
+print(len(dz[1][0]))
+plt.hist(
+    ([dz[i][0] for i in range(2)]), bins=20, label=["init=1", "init=20"], density=True
+)
 plt.legend(fontsize=15)
 plt.xlabel(r"$|\Delta z|/|z|$", fontsize=30)
 plt.show()
@@ -209,4 +215,162 @@ z = gd.initialize_z()
 
 print(z[0], z[1])
 
+# Study the structure of the latent space
+
+#%% see the difference between z_min and z_gs
+
+print(f"{ra.z_min[0][0]} \n")
+print(f"{ra.z_gs[0][0]} \n")
+# %% difference for each dimension
+dz_vector = torch.abs(ra.z_min[0] - ra.z_gs[0]) / torch.abs(ra.z_gs[0])
+dz_vector = dz_vector.detach().numpy()
+
+dz_vector2 = torch.abs(ra.z_min[1] - ra.z_gs[1]) / torch.abs(ra.z_gs[1])
+dz_vector2 = dz_vector2.detach().numpy()
+
+print(dz_vector.shape[0])
+print(dz_vector.shape[1])
+
+for i in range(16):
+    plt.hist(
+        (dz_vector[:, i], dz_vector2[:, i]),
+        bins=40,
+        label=[f"dimension={i} # init={1}", f"dimension={i} # init={20}"],
+    )
+    plt.legend()
+    plt.show()
+
+# %% Spacing the latent space for a single case
+index = 1
+ls = 11
+res = 10
+
+print(f"delta z={ra.z_min[0][index, ls] - ra.z_gs[0][index, ls]}")
+
+zs = torch.linspace(
+    0, ra.z_gs[0][index, ls].item() - ra.z_min[0][index, ls].item(), res
+)
+
+x_init = ra.decoding(idx=[0], jdx=[0], z=ra.z_min[0])[0].detach().numpy()
+x_fin = ra.decoding(idx=[0], jdx=[0], z=ra.z_gs[0])[0].detach().numpy()
+plt.plot(x_init[index], label="init", color="black", linestyle="--", linewidth=2)
+plt.plot(x_fin[index], label="final", color="red", linestyle="--", linewidth=2)
+for z in zs:
+
+    z_propose = ra.z_min[0][index].squeeze().clone()
+    z_propose[ls] = z_propose[ls] + z
+    # print(z_propose - ra.z_min[0][index].squeeze().clone())
+    x = ra.decoding(idx=[0], jdx=[0], z=z_propose)[0].detach().numpy()
+    plt.plot(x[0])
+plt.legend()
+plt.show()
+
+#%% difference between z_mins for both 1 and 20
+# initial configuration
+dz_vector = torch.abs(ra.z_min[0] - ra.z_min[1]) / torch.abs(ra.z_gs[0])
+dz_vector = dz_vector.detach().numpy()
+
+for i in range(16):
+    plt.hist(
+        (dz_vector[:, i]),
+        bins=40,
+        label=[f"dimension={i} # init={1}", f"dimension={i} # init={20}"],
+    )
+    plt.legend()
+    plt.show()
+
+plt.hist(np.average(dz_vector, axis=0), bins=40)
+plt.xlabel(r"$\Delta z_{min}/ z_{gs}$", fontsize=20)
+plt.ylabel("Counts", fontsize=20)
+plt.show()
+
+
+# %% Convex combination
+for index in range(100):
+
+    res = 10
+    alpha = torch.linspace(0, 1, res)
+
+    z_propose_alpha = (
+        ra.z_gs[0][None, index].squeeze().clone() * alpha[:, None]
+        + (1 - alpha[:, None]) * ra.z_min[0][None, index].squeeze().clone()
+    )
+    z_propose_beta = (
+        ra.z_gs[0][None, index].squeeze().clone() * alpha[:, None]
+        + (1 - alpha[:, None]) * ra.z_min[1][None, index].squeeze().clone()
+    )
+    z_propose_gamma = (
+        ra.z_min[0][None, index].squeeze().clone() * alpha[:, None]
+        + (1 - alpha[:, None]) * ra.z_min[1][None, index].squeeze().clone()
+    )
+
+    print(z_propose.shape)
+    eng_alpha = ra.energy_computation(
+        idx=[0],
+        jdx=[0],
+        z=z_propose_alpha,
+        v=torch.tensor(v[index], dtype=torch.double),
+    )[0]
+    eng_beta = ra.energy_computation(
+        idx=[0], jdx=[0], z=z_propose_beta, v=torch.tensor(v[index], dtype=torch.double)
+    )[0]
+    eng_gamma = ra.energy_computation(
+        idx=[0],
+        jdx=[0],
+        z=z_propose_gamma,
+        v=torch.tensor(v[index], dtype=torch.double),
+    )[0]
+
+    x = ra.decoding(idx=[0], jdx=[0], z=z_propose)[0].detach().numpy()
+    x_2 = ra.decoding(idx=[0], jdx=[0], z=z_propose_2)[0].detach().numpy()
+    x_init = ra.decoding(idx=[0], jdx=[0], z=ra.z_min[0])[0].detach().numpy()
+    x_fin = ra.decoding(idx=[0], jdx=[0], z=ra.z_gs[0])[0].detach().numpy()
+    x_init_2 = ra.decoding(idx=[0], jdx=[0], z=ra.z_min[1])[0].detach().numpy()
+
+    plt.plot(
+        x_init[index],
+        label=f"init 1 index={index}",
+        color="black",
+        linestyle="--",
+        linewidth=2,
+    )
+    plt.plot(x_fin[index], label="final", color="red", linestyle="--", linewidth=2)
+    for i in range(res):
+        plt.plot(x[i], alpha=0.2)
+    plt.legend(fontsize=15)
+    plt.show()
+
+    plt.plot(
+        x_init_2[index],
+        label=f"init 20 index={index}",
+        color="black",
+        linestyle="--",
+        linewidth=2,
+    )
+    plt.plot(x_fin[index], label="final", color="red", linestyle="--", linewidth=2)
+    for i in range(res):
+        plt.plot(x_2[i], alpha=0.2)
+    plt.legend(fontsize=15)
+    plt.show()
+
+    plt.plot(
+        alpha,
+        eng.detach().numpy(),
+        label="init 1",
+        color="red",
+        linestyle=":",
+        linewidth=3,
+    )
+    plt.plot(
+        alpha,
+        eng_2.detach().numpy(),
+        label="init 20",
+        color="green",
+        linestyle="--",
+        linewidth=3,
+    )
+    plt.xlabel(r"$\alpha$", fontsize=20)
+    plt.ylabel(r"$e(\alpha)$", fontsize=20)
+    plt.legend()
+    plt.show()
 # %%

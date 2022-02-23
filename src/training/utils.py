@@ -11,6 +11,8 @@ from torch.utils.data import Dataset, TensorDataset, DataLoader
 import matplotlib.pyplot as plt
 from torchmetrics import R2Score
 
+from src.model import Energy
+
 
 def make_data_loader(
     file_name: str, split: float, bs: int, generative: bool, img: bool = False
@@ -150,6 +152,9 @@ class ResultsAnalysis:
         self.min_n = []
         self.gs_n = []
         self.min_z = []
+
+        self.z_min = []
+        self.z_gs = []
 
         if not (only_testing):
 
@@ -785,10 +790,12 @@ class ResultsAnalysis:
                     pt.tensor(self.min_n[i][j]).double().unsqueeze(1)
                 )
                 z_min = z_min.squeeze()
+                self.z_min.append(z_min)
                 z_gs, _ = model.Encoder(
                     pt.tensor(self.gs_n[i][j]).double().unsqueeze(1)
                 )
                 z_gs = z_gs.squeeze()
+                self.z_gs.append(z_gs)
                 dz = (
                     pt.linalg.norm(z_min - z_gs[: z_min.shape[0]], dim=1)
                     .detach()
@@ -796,10 +803,43 @@ class ResultsAnalysis:
                     / pt.linalg.norm(z_gs[: z_min.shape[0]]).detach().numpy()
                 )
                 dn_j.append(dz)
-
             dn_i.append(dn_j)
 
         return dn_i
+
+    def decoding(self, idx: List, jdx: List, z: pt.Tensor):
+        result = []
+        for i in idx:
+            for j in jdx:
+                # load the model
+                model = pt.load(
+                    "model_dft_pytorch/" + self.models_name[i][j], map_location="cpu"
+                )
+                model.eval()
+                model = model.to(dtype=pt.double)
+
+                # propose n from z
+                x = model.proposal(z)
+                # print(x.shape)
+                result.append(x)
+        return result
+
+    def energy_computation(self, idx: List, jdx: List, z: pt.Tensor, v: pt.Tensor):
+        result = []
+        for i in idx:
+            for j in jdx:
+                # load the model
+                model = pt.load(
+                    "model_dft_pytorch/" + self.models_name[i][j], map_location="cpu"
+                )
+                model.eval()
+                model = model.to(dtype=pt.double)
+
+                energy = Energy(model, v=v, dx=self.dx, mu=0)
+                # propose n from z
+                eng, _, _ = energy(z)
+                result.append(eng)
+        return result
 
 
 def dataloader(
