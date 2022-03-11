@@ -53,7 +53,7 @@ parser.add_argument(
     "--device",
     type=str,
     help="the threshold difference for the early stopping (default=device available)",
-    default=pt.device("cuda" if pt.cuda.is_available() else "cpu"),
+    default=("cuda" if pt.cuda.is_available() else "cpu"),
 )
 
 parser.add_argument(
@@ -174,7 +174,7 @@ def main(args):
 
     # hyperparameters
 
-    device = args.device
+    device = pt.device(args.device)
     input_channel = args.input_channels
     input_size = args.input_size
 
@@ -284,12 +284,10 @@ def main(args):
             # only provisional
             dx=14 / 256,
         )
-
     model = model.to(pt.double)
     model = model.to(device=device)
 
     print(model)
-
     print(count_parameters(model))
 
     train_dl, valid_dl = make_data_loader(
@@ -300,7 +298,6 @@ def main(args):
     )
 
     opt = get_optimizer(lr=lr, model=model)
-
     fit(
         supervised=not (from_txt_to_bool(args.generative)),
         model=model,
@@ -315,6 +312,7 @@ def main(args):
         loss_func=nn.MSELoss(),
         patiance=patiance,
         early_stopping=early_stopping,
+        device=device
     )
 
     print(model)

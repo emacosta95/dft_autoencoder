@@ -210,6 +210,11 @@ class GradientDescent:
             # density profiles
             z, _ = model.Encoder(x_init.unsqueeze(1).to(device=self.device))
             z = z.squeeze(1).detach()
+
+            #provisional for low vb
+            if self.n_instances==106:
+                z=pt.randn((self.n_ensambles,self.latent_dimension))
+            
             # initialize in double and device
             z = z.to(dtype=pt.double)
             z = z.to(device=self.device)
@@ -311,8 +316,9 @@ class GradientDescent:
             phi[pt.tensor]: [the wavefunction evaluated after the step]
         """
 
-        eng_const, eng, n = energy.soft_constrain(z)
-        eng_const.backward(pt.ones_like(eng_const))
+        # provisional change
+        eng, _,_, n = energy(z)
+        eng.backward(pt.ones_like(eng))
 
         with pt.no_grad():
             grad = z.grad

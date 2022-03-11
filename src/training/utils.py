@@ -13,7 +13,6 @@ from torchmetrics import R2Score
 
 from src.model import Energy
 
-
 def make_data_loader(
     file_name: str, split: float, bs: int, generative: bool, img: bool = False
 ) -> tuple:
@@ -31,11 +30,12 @@ def make_data_loader(
 
     data = np.load(file_name)
     n = data["density"]
-    func = data["F"]
+    v = data["potential"]
+    eng = data["energy"]
 
+    func = eng - (14 / 256) * np.sum(v * n, axis=1)
     if img is True:
         n = n.reshape(n.shape[0], 1, n.shape[1])
-    func = data["F"]
     n_train = int(n.shape[0] * split)
 
     if generative:
@@ -48,6 +48,7 @@ def make_data_loader(
     train_dl = DataLoader(train_ds, bs, shuffle=True)
     valid_dl = DataLoader(valid_ds, 2 * bs)
     return train_dl, valid_dl
+
 
 
 def get_optimizer(model: pt.nn.Module, lr: int) -> pt.optim.Optimizer:
@@ -636,14 +637,17 @@ class ResultsAnalysis:
         range_eng: Tuple,
         range_n: Tuple,
     ):
+        dn_overall=[]
+        de_overall=[]
+
         fig = plt.figure(figsize=(10, 10))
         for eni, i in enumerate(idx):
             for enj, j in enumerate(jdx):
                 dn = np.sqrt(
-                    np.trapz(
-                        (self.min_n[i][j] - self.gs_n[i][j]) ** 2, dx=self.dx, axis=1
+                    self.dx*np.sum(
+                        (self.min_n[i][j] - self.gs_n[i][j]) ** 2, axis=1
                     )
-                ) / np.sqrt(np.trapz(self.gs_n[i][j] ** 2, dx=self.dx, axis=1))
+                )/ np.sqrt(self.dx*np.sum(self.gs_n[i][j] ** 2, axis=1))
                 plt.hist(
                     dn,
                     bins,
@@ -656,6 +660,7 @@ class ResultsAnalysis:
                     color=color[eni][enj],
                     histtype="step",
                 )
+                dn_overall.append(dn)
         plt.xlabel(r"$|\Delta n|/|n|$", fontsize=20)
         plt.legend(fontsize=15, loc="best")
         plt.tick_params(
@@ -687,6 +692,7 @@ class ResultsAnalysis:
                     color=color[eni][enj],
                     histtype="step",
                 )
+                de_overall.append(de)
 
         plt.xlabel(r"$\Delta e/e$", fontsize=20)
         plt.legend(fontsize=15, loc="upper left")
@@ -702,6 +708,8 @@ class ResultsAnalysis:
         if title != None:
             plt.title(title)
         plt.show()
+
+        return dn_overall,de_overall
 
     def test_models_dft(self, idx: List, jdx: List, data_path: str):
         self.r_square_list = []
@@ -778,6 +786,8 @@ class ResultsAnalysis:
         dn_i = []
         for i in idx:
             dn_j = []
+            zmin=[]
+            zgs=[]
             for j in jdx:
                 # load the model
                 model = pt.load(
@@ -790,12 +800,12 @@ class ResultsAnalysis:
                     pt.tensor(self.min_n[i][j]).double().unsqueeze(1)
                 )
                 z_min = z_min.squeeze()
-                self.z_min.append(z_min)
+                zmin.append(z_min)
                 z_gs, _ = model.Encoder(
                     pt.tensor(self.gs_n[i][j]).double().unsqueeze(1)
                 )
                 z_gs = z_gs.squeeze()
-                self.z_gs.append(z_gs)
+                zgs.append(z_gs)
                 dz = (
                     pt.linalg.norm(z_min - z_gs[: z_min.shape[0]], dim=1)
                     .detach()
@@ -803,6 +813,8 @@ class ResultsAnalysis:
                     / pt.linalg.norm(z_gs[: z_min.shape[0]]).detach().numpy()
                 )
                 dn_j.append(dz)
+            self.z_gs.append(zgs)
+            self.z_min.append(zmin)
             dn_i.append(dn_j)
 
         return dn_i
@@ -824,7 +836,7 @@ class ResultsAnalysis:
                 result.append(x)
         return result
 
-    def energy_computation(self, idx: List, jdx: List, z: pt.Tensor, v: pt.Tensor):
+    def energy_computation(self, idx: List, jdx: List, z: pt.Tensor, v: pt.Tensor,batch:bool):
         result = []
         for i in idx:
             for j in jdx:
@@ -837,7 +849,12 @@ class ResultsAnalysis:
 
                 energy = Energy(model, v=v, dx=self.dx, mu=0)
                 # propose n from z
-                eng, _, _ = energy(z)
+                if batch:
+                    eng,eng_2, _ = energy.batch_calculation(z)
+                else:
+                    eng,eng_2, _,_ = energy(z)
+                    
+                eng = [eng, eng_2]
                 result.append(eng)
         return result
 

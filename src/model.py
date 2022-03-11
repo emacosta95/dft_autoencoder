@@ -573,10 +573,18 @@ class Energy(nn.Module):
         eng_1 = eng_1.view(x.shape[0])
         eng_2 = torch.einsum("ai,i->a", x, self.v) * self.dx
         norm = torch.sum(x, axis=1) * self.dx
+        eng_2_trapz = torch.trapz(x * self.v[None, :], dim=1, dx=self.dx)
         # eng_2 = pt.trapezoid(eng_2, dx=self.dx, dim=1)
-        return eng_1 + eng_2, norm, x
+        return eng_1 + eng_2, eng_1 + eng_2_trapz, norm, x
 
     def soft_constrain(self, z: torch.Tensor):
-        eng, norm, x = self.forward(z)
+        eng,eng_exact, norm, x = self.forward(z)
         cons = self.mu * (norm - 1) ** 2
-        return eng + cons, eng, x
+        return eng + cons, eng_exact, x
+
+    def batch_calculation(self, z: torch.Tensor):
+        x, eng_1 = self.model(z)
+        eng_1 = eng_1.view(x.shape[0])
+        eng_2 = self.dx*torch.einsum('ai,ai->a',self.v,x)
+        eng_2_trapz=torch.trapz(self.v*x,dx=self.dx,dim=1)
+        return eng_1 + eng_2,eng_1+eng_2_trapz, x

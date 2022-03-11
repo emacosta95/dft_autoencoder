@@ -13,8 +13,6 @@ from torch.utils.data import Dataset, TensorDataset, DataLoader
 import matplotlib.pyplot as plt
 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 
 def decreasing(val_losses, best_loss, min_delta=0.001):
     """for early stopping"""
@@ -39,6 +37,7 @@ def fit(
     history_valid: List,
     patiance: int,
     early_stopping: float,
+    device:str,
 ) -> Tuple:
     """This function fits the model using the selected optimizer.
         It will return a list with the loss values and the accuracy as a tuple (loss,accuracy).
