@@ -49,7 +49,7 @@ epochs = [
     [i * 1000 for i in range(n_sample)],
 ] * n_hc
 diff_soglia = [[1] * n_sample] * n_hc
-models_name = [[f"normMSE_20_hc_13_ks_2_ps_4_ls_0.001_vb"] * n_sample for v in hparam]
+models_name = [[f"normMSE_20_hc_13_ks_2_ps_16_ls_0.1_vb"] * n_sample for v in hparam]
 text = [
     [f"mode={label} epochs={epoch}" for epoch in epochs[i]]
     for i, label in enumerate(labels)
@@ -244,10 +244,15 @@ ra.plot_results(
 )
 
 
-#%% DE VS DN
+#%% DE VS DN for 1,20 case
 
-ra.dn_vs_de([0,1],[-1])
+ra.z_analysis([0,1], [-1])
+print(ra.z_gs[0][0].shape)
+gs_n_recon=ra.decoding([0,1],[0])
+eng_recon=ra.gs_energy_computation([0,1],[-1],v=torch.tensor(v[0:105],dtype=torch.double),batch=True)
 
+print(gs_n_recon[0][0].shape)
+print(eng_recon[0][0].shape)
 
 
 #%%
@@ -287,6 +292,8 @@ plt.show()
 idx = [0,1,2,3]
 
 jdx = [0]
+
+
 
 ra.test_models_dft(idx, jdx, "data/final_dataset_simple_rule/data_test.npz")
 

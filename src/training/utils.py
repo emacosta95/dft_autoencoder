@@ -819,24 +819,8 @@ class ResultsAnalysis:
 
         return dn_i
 
-    def dn_vs_de(self, idx: list, jdx: list):
 
-        
-        for i in idx:
-            dn_j = []
-            for j in jdx:
-                # load the model
-                model = pt.load(
-                    "model_dft_pytorch/" + self.models_name[i][j], map_location="cpu"
-                )
-                model.eval()
-                model = model.to(dtype=pt.double)
-
-                n_gs_model = model.proposal(
-                    pt.tensor(self.z_gs[i][j]).double().unsqueeze(1)
-                )
-                
-
+            
     def decoding(self, idx: List, jdx: List):
         results = []
         for i in idx:
@@ -850,11 +834,11 @@ class ResultsAnalysis:
                 model = model.to(dtype=pt.double)
 
                 # propose n from z
-                x = model.proposal(self.min_z[i][j].double().unsqueeze(1))
+                x = model.proposal(pt.tensor(self.z_gs[i][j]).double())
                 # print(x.shape)
                 result.append(x)
             results.append(result)
-        return result
+        return results
 
     def gs_energy_computation(self, idx: List, jdx: List, v: pt.Tensor,batch:bool):
         results = []
@@ -871,7 +855,7 @@ class ResultsAnalysis:
                 energy = Energy(model, v=v, dx=self.dx, mu=0)
                 # propose n from z
                 if batch:
-                    eng,_, _ = energy.batch_calculation(self.gs_z)
+                    eng,_, _ = energy.batch_calculation(pt.tensor(self.z_gs[i][j],dtype=pt.double))
                 else:
                     eng,_, _,_ = energy(self.gs_z)                    
                 result.append(eng)
