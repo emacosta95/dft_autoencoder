@@ -261,7 +261,7 @@ def main(args):
                 history_train = []
 
         print(len(history_train), len(history_valid))
-        model = pt.load(f"model_dft_pytorch/{args.name}")
+        model = pt.load(f"model_dft_pytorch/{args.name}",map_location=device)
         model.loss_dft = nn.MSELoss()
         model_name = args.name
     else:

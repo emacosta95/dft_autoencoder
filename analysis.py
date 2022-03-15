@@ -13,9 +13,9 @@ e_target = data["energy"]
 f=data['F']
 
 #%% only for testing
-ls = [4,8,16,32]
+ls = [16]
 
-models_name = [[f"normMSE_20_hc_13_ks_2_ps_{v}_ls_0.001_vb" ] for v in ls]
+models_name = [[f"normMSE_20_hc_13_ks_2_ps_{v}_ls_0.02_vb" ] for v in ls]
 
 n_sample = len(ls)
 n_ensambles = None
@@ -49,7 +49,7 @@ epochs = [
     [i * 1000 for i in range(n_sample)],
 ] * n_hc
 diff_soglia = [[1] * n_sample] * n_hc
-models_name = [[f"normMSE_20_hc_13_ks_2_ps_8_ls_0.001_vb"] * n_sample for v in hparam]
+models_name = [[f"normMSE_20_hc_13_ks_2_ps_4_ls_0.001_vb"] * n_sample for v in hparam]
 text = [
     [f"mode={label} epochs={epoch}" for epoch in epochs[i]]
     for i, label in enumerate(labels)
@@ -86,6 +86,40 @@ diff_soglia = [[1] * n_sample] * n_hc
 models_name = [[f"normMSE_20_hc_13_ks_2_ps_16_ls_{v}_vb"] * n_sample for v in hparam]
 text = [
     [f"vb={label} " for epoch in epochs[i]]
+    for i, label in enumerate(labels)
+]
+title = f"Gradient descent evolution"
+variable_lr = [[False] * n_sample] * n_hc
+early_stopping = [[False] * n_sample] * n_hc
+lr = [[1] * n_sample] * n_hc
+
+n_sample = [n_sample] * n_hc
+
+only_testing = False
+
+#%% Study different ls dimension
+hparam = [4,8,16,32]
+n_hc = len(hparam)
+labels = [f"ls={init}" for init in hparam]
+yticks = {
+    "de": [0.5,0.4,0.3, 0.1, 0.05, 0.005],
+    "devde": None,
+    "dn": [0.8,0.6,0.4,0.2, 0.1, 0.02, 0.01],
+    "devdn": [0.3,0.2, 0.1, 0.02, 0.01],
+}
+xticks = [i * 3000 for i in range(11)]
+
+n_sample = 31
+n_hc = len(hparam)
+n_instances = [[105] * n_sample] * n_hc
+n_ensambles = [[1] * n_sample for n_init in hparam]
+epochs = [
+    [i * 1000 for i in range(n_sample)],
+] * n_hc
+diff_soglia = [[1] * n_sample] * n_hc
+models_name = [[f"normMSE_20_hc_13_ks_2_ps_{v}_ls_0.001_vb"] * n_sample for v in hparam]
+text = [
+    [f"ls={label} " for epoch in epochs[i]]
     for i, label in enumerate(labels)
 ]
 title = f"Gradient descent evolution"
@@ -210,6 +244,12 @@ ra.plot_results(
 )
 
 
+#%% DE VS DN
+
+ra.dn_vs_de([0,1],[-1])
+
+
+
 #%%
 dn_overall,de_overall=ra.histogram_plot(
     idx=idx,
@@ -225,8 +265,8 @@ dn_overall,de_overall=ra.histogram_plot(
     fill=fill,
 )
 
-de_local_minima=np.abs(de_overall[0])-np.abs(de_overall[1])
-dn_local_minima=dn_overall[0]-dn_overall[1]
+de_local_minima=np.abs(de_overall[0][0:68])-np.abs(de_overall[1][0:68])
+dn_local_minima=dn_overall[0][0:68]-dn_overall[1][0:68]
 
 count=dn_local_minima[dn_local_minima>0.05]
 p_local=count.shape[0]/dn_local_minima.shape[0]
@@ -237,7 +277,7 @@ plt.legend(fontsize=20)
 plt.show()
 
 plt.hist(dn_local_minima,bins=20,label=f'p(local minima)={p_local:.3f}')
-plt.xlabel(r'$|\Delta n_{init=1}/e|-|\Delta n_{init=20}/e|$',fontsize=20)
+plt.xlabel(r'$|\Delta n_{init=1}/|n||-|\Delta n_{init=20}/|n||$',fontsize=20)
 plt.legend(fontsize=20)
 plt.show()
 
