@@ -588,3 +588,11 @@ class Energy(nn.Module):
         eng_2 = self.dx*torch.einsum('ai,ai->a',self.v,x)
         eng_2_trapz=torch.trapz(self.v*x,dx=self.dx,dim=1)
         return eng_1 + eng_2,eng_1+eng_2_trapz, x
+
+    def ml_calculation(self,x:torch.Tensor):
+
+        eng_1 = self.model.DFTModel(x.unsqueeze(1)).squeeze()
+        eng_2 = self.dx*torch.einsum('ai,ai->a',self.v,x)
+        eng_2_trapz=torch.trapz(self.v*x,dx=self.dx,dim=1)
+        return eng_1 + eng_2,eng_1+eng_2_trapz, x
+

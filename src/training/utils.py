@@ -140,6 +140,7 @@ class ResultsAnalysis:
         lr: List,
         dx: float,
         postnormalization: bool,
+        v:np.array
     ):
         self.models_name = models_name
         self.text = text
@@ -150,12 +151,12 @@ class ResultsAnalysis:
 
         self.min_eng = []
         self.gs_eng = []
+        self.r_eng=[]
+        self.ml_eng=[]
         self.min_n = []
         self.gs_n = []
         self.min_z = []
-
-        self.z_min = []
-        self.z_gs = []
+        self.gs_z = []
 
         if not (only_testing):
 
@@ -163,9 +164,13 @@ class ResultsAnalysis:
 
                 x_min = []
                 x_gs = []
+                x_r=[]
+                x_ml=[]
                 y_min = []
                 y_gs = []
                 z_min = []
+                z_gs=[]
+                
 
                 for j in range(len(epochs[i])):
 
@@ -195,6 +200,29 @@ class ResultsAnalysis:
                         variable_lr=variable_lr[i][j],
                     )
 
+                    
+                    model = pt.load(
+                    "model_dft_pytorch/" + self.models_name[i][j], map_location="cpu"
+                    )
+                    model.eval()
+                    model = model.to(dtype=pt.double)
+
+                    energy=Energy(model,pt.tensor(v,dtype=pt.double),dx=dx,mu=0)
+
+
+                    engml,_, _ = energy.ml_calculation(pt.tensor(gs_n,dtype=pt.double))
+                    engml=engml.detach().numpy()
+
+                    zgs, _ = model.Encoder(
+                    pt.tensor(gs_n).double().unsqueeze(1)
+                    )
+                    zgs = zgs.squeeze()
+                    z_gs.append(z_gs)
+
+                    engr,_, _ = energy.batch_calculation(pt.tensor(zgs,dtype=pt.double))
+                    engr=engr.detach().numpy()
+
+
                     if postnormalization:
                         norm = np.sum(min_n, axis=1) * dx
                         min_n = min_n / norm[:, None]
@@ -204,12 +232,18 @@ class ResultsAnalysis:
                     y_min.append(min_n)
                     y_gs.append(gs_n)
                     z_min.append(z)
+                    x_ml.append(engml)
+                    x_r.append(engr)
+                    z_gs.append(zgs)
 
+                self.r_eng.append(x_r)
+                self.ml_eng.append(x_ml)
                 self.min_eng.append(x_min)
                 self.gs_eng.append(x_gs)
                 self.min_n.append(y_min)
                 self.gs_n.append(y_gs)
                 self.min_z.append(z_min)
+                self.gs_z.append(z_gs)
 
     def _comparison(self):
 
@@ -224,6 +258,12 @@ class ResultsAnalysis:
         self.list_abs_err_n = []
         self.list_R_square = []
         self.list_R_square_energy = []
+        self.list_de_ml=[]
+        self.list_de_r=[]
+        self.list_de_l=[]
+        self.list_devde_ml=[]
+        self.list_devde_r=[]
+        self.list_devde_l=[]
 
         for i in range(len(self.min_eng)):
 
@@ -248,6 +288,12 @@ class ResultsAnalysis:
             gs_ns = []
             dns = []
             des = []
+            des_ml=[]
+            devde_ml=[]
+            des_r=[]
+            devde_r=[]
+            de_l=[]
+            devde_l=[]
             dx = self.dx
 
             for j in range(len(self.min_eng[i])):
@@ -338,6 +384,16 @@ class ResultsAnalysis:
                 )
                 abs_err_n.append(np.average(dn_abs_error[j]))
 
+                des_r.append(np.average(np.abs(self.r_eng[i][j]-self.ml_eng[i][j])/self.ml_eng[i][j]))
+                devde_r.append(np.std(np.abs(self.r_eng[i][j]-self.ml_eng[i][j])/self.ml_eng[i][j]))
+
+                de_l.append(np.average(np.abs(self.r_eng[i][j]-self.min_eng[i][j])/self.r_eng[i][j]))
+                devde_l.append(np.std(np.abs(self.r_eng[i][j]-self.min_eng[i][j])/self.r_eng[i][j]))
+
+                des_ml.append(np.average(np.abs(self.ml_eng[i][j]-self.gs_eng[i][j])/self.gs_eng[i][j]))
+                devde_ml.append(np.std(np.abs(self.ml_eng[i][j]-self.gs_eng[i][j])/self.gs_eng[i][j]))
+                
+
             self.list_de.append(av_eng_values)
             self.list_R_square.append(r_square)
             self.list_R_square_energy.append(r_square_energy)
@@ -349,6 +405,12 @@ class ResultsAnalysis:
             self.list_delta_A.append(av_delta_gradient_ns)
             self.list_dev_A.append(dev_delta_gradient_ns)
             self.list_abs_err_n.append(abs_err_n)
+            self.list_de_ml.append(des_ml)
+            self.list_de_l.append(de_l)
+            self.list_de_r.append(des_r)
+            self.list_devde_ml.append(devde_ml)
+            self.list_devde_l.append(devde_l)
+            self.list_devde_r.append(devde_r)
 
     def plot_results(
         self,
@@ -369,10 +431,13 @@ class ResultsAnalysis:
             plt.errorbar(
                 x=position[i],
                 y=des,
-                yerr=self.list_devde[i] / np.sqrt(self.gs_eng[i][0].shape[0] - 1),
+                yerr=self.list_devde[i], #/ np.sqrt(self.gs_eng[i][0].shape[0] - 1),
                 label=labels[i],
                 linewidth=3,
             )
+        plt.axhline(y=self.list_de_ml[-1][0],color='blue',linestyle='--',label='ml')
+        plt.axhline(y=self.list_de_r[-1][0],color='black',linestyle='--',label='recon')
+        
         plt.ylabel(r"$\mathbb{E}(|\Delta e|)$", fontsize=20)
         plt.xlabel(xlabel, fontsize=20)
         plt.xticks(labels=xticks, ticks=xposition)
@@ -390,8 +455,93 @@ class ResultsAnalysis:
         plt.legend(fontsize=15)
         plt.title(title)
         if loglog:
-            plt.loglog()
+            plt.semilogx()
         plt.show()
+
+        fig = plt.figure(figsize=(10, 10))
+        for i, des in enumerate(self.list_de_ml):
+            plt.errorbar(
+                x=position[i],
+                y=des,
+                yerr=self.list_devde_ml[i], #/ np.sqrt(self.gs_eng[i][0].shape[0] - 1),
+                label=labels[i],
+                linewidth=3,
+            )
+        plt.ylabel(r"$\mathbb{E}(|\Delta e_{ML}|)$", fontsize=20)
+        plt.xlabel(xlabel, fontsize=20)
+        plt.xticks(labels=xticks, ticks=xposition)
+        plt.tick_params(
+            top=True,
+            right=True,
+            labeltop=False,
+            labelright=False,
+            direction="in",
+            labelsize=15,
+            width=3,
+        )
+        plt.legend(fontsize=15)
+        plt.title(title)
+        if loglog:
+            plt.semilogx()
+        plt.show()
+
+        fig = plt.figure(figsize=(10, 10))
+        for i, des in enumerate(self.list_de_l):
+            plt.errorbar(
+                x=position[i],
+                y=des,
+                yerr=self.list_devde_l[i], #/ np.sqrt(self.gs_eng[i][0].shape[0] - 1),
+                label=labels[i],
+                linewidth=3,
+            )
+            
+        plt.ylabel(r"$\mathbb{E}(|\Delta e_{Local}|)$", fontsize=20)
+        plt.xlabel(xlabel, fontsize=20)
+        plt.xticks(labels=xticks, ticks=xposition)
+        if yticks != None:
+            plt.yticks(yticks["de"])
+        plt.tick_params(
+            top=True,
+            right=True,
+            labeltop=False,
+            labelright=False,
+            direction="in",
+            labelsize=15,
+            width=3,
+        )
+        plt.legend(fontsize=15)
+        plt.title(title)
+        if loglog:
+            plt.semilogx()
+        plt.show()
+
+        fig = plt.figure(figsize=(10, 10))
+        for i, des in enumerate(self.list_de_r):
+            plt.errorbar(
+                x=position[i],
+                y=des,
+                yerr=self.list_devde_r[i], #/ np.sqrt(self.gs_eng[i][0].shape[0] - 1),
+                label=labels[i],
+                linewidth=3,
+            )
+        plt.ylabel(r"$\mathbb{E}(|\Delta e_{recon}|)$", fontsize=20)
+        plt.xlabel(xlabel, fontsize=20)
+        plt.xticks(labels=xticks, ticks=xposition)
+        plt.tick_params(
+            top=True,
+            right=True,
+            labeltop=False,
+            labelright=False,
+            direction="in",
+            labelsize=15,
+            width=3,
+        )
+        plt.legend(fontsize=15)
+        plt.title(title)
+        if loglog:
+            plt.semilogx()
+        plt.show()
+
 
         fig = plt.figure(figsize=(10, 10))
         for i, devde in enumerate(self.list_devde):
@@ -418,7 +568,7 @@ class ResultsAnalysis:
         plt.legend(fontsize=15)
         plt.title(title)
         if loglog:
-            plt.loglog()
+            plt.semilogx()
         plt.show()
 
         fig = plt.figure(figsize=(10, 10))
@@ -426,7 +576,7 @@ class ResultsAnalysis:
             plt.errorbar(
                 x=position[i],
                 y=dn,
-                yerr=self.list_devdn[i] / np.sqrt(self.gs_eng[i][0].shape[0] - 1),
+                yerr=self.list_devdn[i], #/ np.sqrt(self.gs_eng[i][0].shape[0] - 1),
                 label=labels[i],
                 linewidth=3,
             )
@@ -447,7 +597,7 @@ class ResultsAnalysis:
         plt.legend(fontsize=15)
         plt.title(title)
         if loglog:
-            plt.loglog()
+            plt.semilogx()
         plt.show()
 
         fig = plt.figure(figsize=(10, 10))
@@ -455,7 +605,7 @@ class ResultsAnalysis:
             plt.errorbar(
                 x=position[i],
                 y=dn,
-                yerr=self.list_devdn[i] / np.sqrt(self.gs_eng[i][0].shape[0] - 1),
+                yerr=self.list_devdn[i], #/ np.sqrt(self.gs_eng[i][0].shape[0] - 1),
                 label=labels[i],
                 linewidth=3,
             )
@@ -474,7 +624,7 @@ class ResultsAnalysis:
         plt.legend(fontsize=15)
         plt.title(title)
         if loglog:
-            plt.loglog()
+            plt.semilogx()
         plt.show()
 
         fig = plt.figure(figsize=(10, 10))
@@ -498,7 +648,7 @@ class ResultsAnalysis:
         plt.legend(fontsize=15)
         plt.title(title)
         if loglog:
-            plt.loglog()
+            plt.semilogx()
         plt.show()
 
         fig = plt.figure(figsize=(10, 10))
@@ -506,7 +656,7 @@ class ResultsAnalysis:
             plt.errorbar(
                 x=position[i],
                 y=des,
-                yerr=self.list_delta_devde[i] / np.sqrt(self.gs_eng[i][0].shape[0] - 1),
+                yerr=self.list_delta_devde[i], #/ np.sqrt(self.gs_eng[i][0].shape[0] - 1),
                 label=labels[i],
                 linewidth=3,
             )
@@ -531,7 +681,7 @@ class ResultsAnalysis:
             plt.errorbar(
                 x=position[i],
                 y=das,
-                yerr=self.list_dev_A[i] / np.sqrt(self.gs_eng[i][0].shape[0] - 1),
+                yerr=self.list_dev_A[i], #/ np.sqrt(self.gs_eng[i][0].shape[0] - 1),
                 label=labels[i],
                 linewidth=3,
             )
@@ -550,7 +700,7 @@ class ResultsAnalysis:
         plt.legend(fontsize=15)
         plt.title(title)
         if loglog:
-            plt.loglog()
+            plt.semilogx()
         plt.show()
 
         fig = plt.figure(figsize=(10, 10))
@@ -836,7 +986,26 @@ class ResultsAnalysis:
                 # propose n from z
                 x = model.proposal(pt.tensor(self.z_gs[i][j]).double())
                 # print(x.shape)
-                result.append(x)
+                result.append(x.detach().numpy())
+            results.append(result)
+        return results
+
+    def decoding_z(self, idx: List, jdx: List,z:pt.tensor):
+        results = []
+        for i in idx:
+            result=[]
+            for j in jdx:
+                # load the model
+                model = pt.load(
+                    "model_dft_pytorch/" + self.models_name[i][j], map_location="cpu"
+                )
+                model.eval()
+                model = model.to(dtype=pt.double)
+
+                # propose n from z
+                x = model.proposal(z)
+                # print(x.shape)
+                result.append(x.detach().numpy())
             results.append(result)
         return results
 
@@ -857,23 +1026,55 @@ class ResultsAnalysis:
                 if batch:
                     eng,_, _ = energy.batch_calculation(pt.tensor(self.z_gs[i][j],dtype=pt.double))
                 else:
-                    eng,_, _,_ = energy(self.gs_z)                    
+                    eng,_, _,_ = energy(self.z_gs[i][j])                    
+                result.append(eng.detach().numpy())
+            results.append(result)
+        return results
+
+    def ml_eng_computation(self, idx: List, jdx: List, v: pt.Tensor,batch=True):
+        results = []
+        for i in idx:
+            result=[]
+            for j in jdx:
+                # load the model
+                model = pt.load(
+                    "model_dft_pytorch/" + self.models_name[i][j], map_location="cpu"
+                )
+                model.eval()
+                model = model.to(dtype=pt.double)
+
+                energy = Energy(model, v=v, dx=self.dx, mu=0)
+                # propose n from z
+                if batch:
+                    eng,_, _ = energy.ml_calculation(pt.tensor(self.gs_n[i][j],dtype=pt.double))                 
+                result.append(eng.detach().numpy())
+            results.append(result)
+        return results
+
+
+    def energy_computation(self, idx: List, jdx: List, v: pt.Tensor,z:pt.Tensor,batch:bool):
+        results = []
+        for i in idx:
+            result=[]
+            for j in jdx:
+                # load the model
+                model = pt.load(
+                    "model_dft_pytorch/" + self.models_name[i][j], map_location="cpu"
+                )
+                model.eval()
+                model = model.to(dtype=pt.double)
+
+                energy = Energy(model, v=v, dx=self.dx, mu=0)
+                # propose n from z
+                if batch:
+                    eng,_, _ = energy(z)
+                else:
+                    eng,_, _,_ = energy(z)                    
                 result.append(eng)
             results.append(result)
         return results
 
-    def dn_vs_de(self,idx:List,jdx:List):
-        for i in idx:
-            for j in jdx:
-
-                dn=np.sqrt( np.sum( (self.min_n[i][j]-self.gs_n[i][j])**2,axis=1) )/np.sqrt( np.sum( (self.gs_n[i][j])**2,axis=1) )
-                de=(self.min_eng[i][j]-self.gs_eng[i][j])
-
-                plt.scatter(de,dn,s=20,label=self.text[i][j])
-        plt.xlabel(r'$\Delta e$',fontsize=20)
-        plt.ylabel(r'$|\Delta n |$',fontsize=20)
-        plt.legend(fontsize=15)
-        plt.show()
+    
 
 def dataloader(
     type: str,

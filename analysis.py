@@ -1,4 +1,5 @@
 #%%
+
 from src.gradient_descent import SimulatedAnnealing
 from src.training.utils import ResultsAnalysis
 import argparse
@@ -11,6 +12,13 @@ data = np.load("data/final_dataset_simple_rule/data_test.npz")
 v = data["potential"]
 e_target = data["energy"]
 f=data['F']
+
+pot=v[0:105]
+av_pot=np.sqrt(np.sum(pot**2,axis=1)*(14/256))
+av_pot=np.average(av_pot)
+
+print(f'av_pot={av_pot:.4f}')
+
 
 #%% only for testing
 ls = [16]
@@ -46,12 +54,12 @@ n_hc = len(hparam)
 n_instances = [[105] * n_sample] * n_hc
 n_ensambles = [[n_init] * n_sample for n_init in hparam]
 epochs = [
-    [i * 1000 for i in range(n_sample)],
+    [ i * 1000 for i in range(n_sample)],
 ] * n_hc
 diff_soglia = [[1] * n_sample] * n_hc
-models_name = [[f"normMSE_20_hc_13_ks_2_ps_16_ls_0.1_vb"] * n_sample for v in hparam]
+models_name = [[f"normMSE_60_hc_13_ks_2_ps_16_ls_1e-06_vb"] * n_sample for v in hparam]
 text = [
-    [f"mode={label} epochs={epoch}" for epoch in epochs[i]]
+    [f"{label}" for epoch in epochs[i]]
     for i, label in enumerate(labels)
 ]
 title = f"Gradient descent evolution"
@@ -64,7 +72,7 @@ n_sample = [n_sample] * n_hc
 only_testing = False
 
 #%% Study with different vb
-hparam = [0.1,0.05,0.01,0.001,10**-6]
+hparam = [0.1,0.01,10**-6]
 n_hc = len(hparam)
 labels = [f"vb={init}" for init in hparam]
 yticks = {
@@ -98,28 +106,28 @@ n_sample = [n_sample] * n_hc
 only_testing = False
 
 #%% Study different ls dimension
-hparam = [4,8,16,32]
+hparam = ['sample']
 n_hc = len(hparam)
-labels = [f"ls={init}" for init in hparam]
+labels = [f"sample" for init in hparam]
 yticks = {
-    "de": [0.5,0.4,0.3, 0.1, 0.05, 0.005],
+    "de": None,
     "devde": None,
-    "dn": [0.8,0.6,0.4,0.2, 0.1, 0.02, 0.01],
-    "devdn": [0.3,0.2, 0.1, 0.02, 0.01],
+    "dn": None,
+    "devdn": None,
 }
-xticks = [i * 3000 for i in range(11)]
-
-n_sample = 31
+xticks = [4,8,16,32]
+position=[ xticks]*n_hc
+n_sample = len(xticks)
 n_hc = len(hparam)
 n_instances = [[105] * n_sample] * n_hc
 n_ensambles = [[1] * n_sample for n_init in hparam]
 epochs = [
-    [i * 1000 for i in range(n_sample)],
+    [30000 for i in range(n_sample)],
 ] * n_hc
 diff_soglia = [[1] * n_sample] * n_hc
-models_name = [[f"normMSE_20_hc_13_ks_2_ps_{v}_ls_0.001_vb"] * n_sample for v in hparam]
+models_name = [[f"normMSE_20_hc_13_ks_2_ps_{v}_ls_0.001_vb"  for v in xticks]]*n_hc
 text = [
-    [f"ls={label} " for epoch in epochs[i]]
+    [f"ls={ls} " for ls in xticks]
     for i, label in enumerate(labels)
 ]
 title = f"Gradient descent evolution"
@@ -132,29 +140,30 @@ n_sample = [n_sample] * n_hc
 only_testing = False
 
 
-#%%
-hparam = [10**-6, 0.001]
-n_hc = len(hparam)
-labels = [f"beta={init}" for init in hparam]
-yticks = {
-    "de": [0.5,0.4,0.3, 0.1, 0.05, 0.005],
-    "devde": None,
-    "dn": [0.8,0.6,0.4,0.2, 0.1, 0.02, 0.01],
-    "devdn": [0.3,0.2, 0.1, 0.02, 0.01],
-}
-xticks = [i * 3000 for i in range(11)]
 
-n_sample = 31
+#%% Study different vb
+hparam = ['sample']
+n_hc = len(hparam)
+labels = [f"sample" for init in hparam]
+yticks = {
+    "de": None,
+    "devde": None,
+    "dn": None,
+    "devdn": None,
+}
+xticks = [10**-6,0.001,0.01,0.05,0.1]
+position=[ xticks]*n_hc
+n_sample = len(xticks)
 n_hc = len(hparam)
 n_instances = [[105] * n_sample] * n_hc
 n_ensambles = [[1] * n_sample for n_init in hparam]
 epochs = [
-    [i * 1000 for i in range(n_sample)],
+    [30000 for i in range(n_sample)],
 ] * n_hc
 diff_soglia = [[1] * n_sample] * n_hc
-models_name = [[f"normMSE_20_hc_13_ks_2_ps_16_ls_{v}_vb"] * n_sample for v in hparam]
+models_name = [[f"normMSE_20_hc_13_ks_2_ps_16_ls_{v}_vb"  for v in xticks]]*n_hc
 text = [
-    [f"{label}" for epoch in epochs[i]]
+    [f"ls={ls} " for ls in xticks]
     for i, label in enumerate(labels)
 ]
 title = f"Gradient descent evolution"
@@ -202,7 +211,7 @@ only_testing = False
 
 
 #%% Histogram settings
-idx = [0,1]
+idx = [0,1,-1]
 jdx = [-1]
 hatch = [["."], ["None"], ["//"]]
 color = [["black"], ["red"], ["green"]]
@@ -228,6 +237,7 @@ ra = ResultsAnalysis(
     lr=lr,
     dx=14 / 256,
     postnormalization=False,
+    v=v[0:105]
 )
 
 # %% Qualitative plots
@@ -237,22 +247,201 @@ ra.plot_results(
     xposition=xticks,
     yticks=yticks,
     position=epochs,
-    xlabel="epochs",
+    xlabel="ls",
     labels=labels,
     title="Evolution comparison between CNN Softplus and ACNN",
     loglog=False,
 )
 
+#%%
+print(ra.list_de)
 
 #%% DE VS DN for 1,20 case
 
-ra.z_analysis([0,1], [-1])
+ra.z_analysis([0,-1], [-1])
 print(ra.z_gs[0][0].shape)
-gs_n_recon=ra.decoding([0,1],[0])
+gs_n_recon=ra.decoding([0,1,2,3],[0])
 eng_recon=ra.gs_energy_computation([0,1],[-1],v=torch.tensor(v[0:105],dtype=torch.double),batch=True)
-
+eng_ml=ra.ml_eng_computation([0,1],[-1],v=torch.tensor(v[0:105],dtype=torch.double),batch=True)
 print(gs_n_recon[0][0].shape)
 print(eng_recon[0][0].shape)
+
+#%% DE VS DN for vb
+idx=np.arange(3)
+jdx=[-1]
+
+ra.z_analysis(idx, jdx)
+print(ra.z_gs[0][0].shape)
+gs_n_recon=ra.decoding(idx,jdx)
+eng_recon=ra.gs_energy_computation(idx,jdx,v=torch.tensor(v[0:105],dtype=torch.double),batch=True)
+eng_ml=ra.ml_eng_computation(idx,jdx,v=torch.tensor(v[0:105],dtype=torch.double),batch=True)
+print(gs_n_recon[0][0].shape)
+print(eng_recon[0][0].shape)
+
+#%%plots of convergence prediction vs gradient descent (local)
+
+idx=-1
+jdx=-1
+
+dn_p=np.sqrt(np.sum((gs_n_recon[idx][jdx]-ra.gs_n[idx][jdx])**2,axis=1))/np.sqrt(np.sum(ra.gs_n[idx][jdx],axis=1))
+dn_l=np.sqrt(np.sum((gs_n_recon[idx][jdx]-ra.min_n[idx][jdx])**2,axis=1))/np.sqrt(np.sum(ra.gs_n[idx][jdx],axis=1))
+dn=np.sqrt(np.sum((ra.min_n[idx][jdx]-ra.gs_n[idx][jdx])**2,axis=1))/np.sqrt(np.sum(ra.gs_n[idx][jdx],axis=1))
+
+de=np.abs(ra.min_eng[idx][jdx]-ra.gs_eng[idx][jdx])
+de_p=np.abs(eng_recon[idx][jdx]-ra.gs_eng[idx][jdx])
+de_l=np.abs(eng_recon[idx][jdx]-ra.min_eng[idx][jdx])
+de_ml=np.abs(eng_ml[idx][jdx]-ra.gs_eng[idx][jdx])
+de_ml_with_min=np.abs(eng_ml[idx][jdx]-ra.min_eng[idx][jdx])
+
+print(f'de_ml={np.average(de_ml)}')
+
+plt.scatter(dn_p,de_p)
+plt.xlabel(r'$|\Delta n_{p}|/|n|$',fontsize=20)
+plt.ylabel(r'$|\Delta e_{p}|/|e|$',fontsize=20)
+plt.show()
+
+
+
+plt.scatter(dn_l,de_l)
+plt.xlabel(r'$|\Delta n_{l}|/|n|$',fontsize=20)
+plt.ylabel(r'$|\Delta e_l|/|e|$',fontsize=20)
+
+plt.show()
+
+plt.scatter(dn_p,de_l)
+plt.xlabel(r'$|\Delta n_{p}|/|n|$',fontsize=20)
+plt.ylabel(r'$|\Delta e_l|/|e|$',fontsize=20)
+plt.show()
+
+dn_max=np.max(dn)
+s=np.linspace(0,dn_max,10)
+plt.scatter(dn_p,dn)
+plt.xlabel(r'$|\Delta n_{p}|/|n|$',fontsize=20)
+plt.ylabel(r'$|\Delta n |/|n|$',fontsize=20)
+plt.plot(s,s,color='red',linestyle='--')
+
+plt.show()
+
+for i in range(dn_p.shape[0]):
+    plt.plot([dn[i],dn_p[i]],[de[i],de_p[i]],linestyle='--',color='orange',alpha=0.5)
+    plt.plot([dn[i],dn[i]],[de_ml[i],de[i]],linestyle='--',color='green',alpha=0.5)
+
+
+plt.scatter(dn_p,de_p,label='pred',color='black')
+plt.scatter(dn,de,label='gradient',color='red')
+#plt.scatter(dn,de_ml,label='ml prediction',color='green')
+
+
+plt.xlabel(r'$|\Delta n|/|n|$',fontsize=20)
+plt.ylabel(r'$|\Delta e|/|e|$',fontsize=20)
+
+
+plt.legend(fontsize=20)
+plt.show()
+
+
+
+#%% effect of multiple initial configuration
+fig=plt.figure(figsize=(10,10))
+xs=[]
+ys=[]
+for idx in [0,-1]:
+    for jdx in [-1]:
+
+        dn_l=np.sqrt(np.sum((gs_n_recon[idx][jdx]-ra.min_n[idx][jdx])**2,axis=1))/np.sqrt(np.sum(ra.gs_n[idx][jdx],axis=1))
+        de_l=np.abs(eng_recon[idx][jdx]-ra.min_eng[idx][jdx])
+
+        #plots of convergence in gradient descent (local) for different initial conf
+        plt.scatter(dn_l,de_l,label=ra.text[idx][jdx])
+
+        xs.append(dn_l)
+        ys.append(de_l)
+
+for i in range(dn_l.shape[0]):
+    plt.plot([xs[j][i] for j in range(2)],[ys[j][i] for j in range(2)],linestyle='--',alpha=0.5,color='orange')
+    plt.plot([xs[j][i] for j in range(2)],[ys[j][i] for j in range(2)],linestyle='--',alpha=0.5,color='orange')
+
+
+
+plt.xlabel(r'$|\Delta n_l|/|n|$',fontsize=20)
+plt.ylabel(r'$|\Delta e_l|/|e|$',fontsize=20)
+plt.legend(fontsize=20)
+plt.show()
+
+#%% Show the suspect instances
+
+idx=0
+jdx=-1
+
+# Comparison between prediction error and accuracy error
+de_ml = []
+de_gd = []
+for index in range(105):
+    print(index)
+    res = 100
+    alpha = torch.linspace(0, 1, res)
+    z_propose_alpha = (
+        ra.z_gs[idx][jdx][None, index].squeeze().clone() * alpha[:, None]
+        + (1 - alpha[:, None]) * ra.z_min[idx][jdx][None, index].squeeze().clone()
+    )
+    eng_alpha = ra.energy_computation(
+        idx=[idx],
+        jdx=[idx],
+        z=z_propose_alpha,
+        v=torch.tensor(v[index], dtype=torch.double),
+        batch=False,
+    )[0][0]
+    
+    
+    x_alpha = ra.decoding_z(idx=[idx], jdx=[jdx], z=z_propose_alpha)[0][0]
+    x_init = ra.decoding_z(idx=[idx], jdx=[jdx], z=ra.z_min[idx][jdx])[0][0]
+    x_fin = ra.decoding_z(idx=[idx], jdx=[jdx], z=ra.z_gs[idx][jdx])[0][0]
+    x_init_2 = ra.decoding_z(idx=[0], jdx=[0], z=ra.z_min[idx][jdx])[0][0]
+    plt.plot(
+        x_init[index],
+        label=f"init 1 index={index}",
+        color="black",
+        linestyle="--",
+        linewidth=2,
+    )
+    plt.plot(
+        ra.gs_n[0][0][index],
+        label=f"exact n index={index}",
+        color="green",
+        linewidth=4,
+        alpha=0.5,
+    )
+    plt.plot(x_fin[index], label="final", color="red", linestyle="--", linewidth=2)
+    for i in range(res):
+        plt.plot(x_alpha[i], alpha=0.2)
+    plt.legend(fontsize=15)
+    plt.show()
+
+
+    
+    plt.plot(
+        alpha,
+        eng_alpha.detach().numpy(),
+        label="alpha path 1-> gs",
+        color="red",
+        linestyle=":",
+        linewidth=3,
+    )
+    # plt.axhline(
+    #     y=eng_ml[idx][jdx][index],
+    #     linewidth=3,
+    #     color="black",
+    #     label=f"eng={eng_ml[index]:.3f}",
+    # )
+    plt.xlabel(r"$\alpha$", fontsize=20)
+    plt.ylabel(r"$e(\alpha)$", fontsize=20)
+    plt.legend(fontsize=20)
+    plt.show()
+    
+    
+
+
+
 
 
 #%%
