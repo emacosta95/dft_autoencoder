@@ -269,7 +269,7 @@ def main(args):
         history_valid = []
         history_train = []
 
-        model = DFTVAEnorm(
+        model = DFTVAE(
             input_size=input_size,
             latent_dimension=args.latent_dimension,
             loss_generative=loss_func,
@@ -282,7 +282,7 @@ def main(args):
             pooling_size=pooling_size,
             output_size=output_size,
             # only provisional
-            dx=14 / 256,
+            # dx=14 / 256,
         )
     model = model.to(pt.double)
     model = model.to(device=device)

@@ -31,19 +31,19 @@ def make_data_loader(
     data = np.load(file_name)
     n = data["density"]
     v = data["potential"]
-    eng = data["energy"]
+    f = data["F"]
 
-    func = eng - (14 / 256) * np.sum(v * n, axis=1)
+    #func = eng - (14 / 256) * np.sum(v * n, axis=1)
     if img is True:
         n = n.reshape(n.shape[0], 1, n.shape[1])
     n_train = int(n.shape[0] * split)
 
     if generative:
-        train_ds = TensorDataset(pt.tensor(n[0:n_train]))
-        valid_ds = TensorDataset(pt.tensor(n[n_train:]))
+        train_ds = TensorDataset(pt.tensor(n[0:n_train],dtype=pt.double))
+        valid_ds = TensorDataset(pt.tensor(n[n_train:],dtype=pt.double))
     else:
-        train_ds = TensorDataset(pt.tensor(n[0:n_train]), pt.tensor(func[0:n_train]))
-        valid_ds = TensorDataset(pt.tensor(n[n_train:]), pt.tensor(func[n_train:]))
+        train_ds = TensorDataset(pt.tensor(n[0:n_train],dtype=pt.double), pt.tensor(f[0:n_train],dtype=pt.double))
+        valid_ds = TensorDataset(pt.tensor(n[n_train:],dtype=pt.double), pt.tensor(f[n_train:],dtype=pt.double))
 
     train_dl = DataLoader(train_ds, bs, shuffle=True)
     valid_dl = DataLoader(valid_ds, 2 * bs)
@@ -102,9 +102,9 @@ class VaeLoss(nn.Module):
         recon_loss = F.binary_cross_entropy(
             recon_x.view(recon_x.shape[0], -1),
             x.view(x.shape[0], -1),
-            reduction="sum",
+            reduction="mean",
         )
-        kldivergence = -0.5 * pt.sum(1 + logvar - mu.pow(2) - logvar.exp())
+        kldivergence = -0.5 * pt.mean(1 + logvar - mu.pow(2) - logvar.exp())
         return recon_loss + self.variational_beta * kldivergence, kldivergence
 
 
@@ -154,6 +154,7 @@ class ResultsAnalysis:
         self.r_eng=[]
         self.ml_eng=[]
         self.min_n = []
+        self.recon_n=[]
         self.gs_n = []
         self.min_z = []
         self.gs_z = []
@@ -170,6 +171,7 @@ class ResultsAnalysis:
                 y_gs = []
                 z_min = []
                 z_gs=[]
+                y_recon=[]
                 
 
                 for j in range(len(epochs[i])):
@@ -207,7 +209,7 @@ class ResultsAnalysis:
                     model.eval()
                     model = model.to(dtype=pt.double)
 
-                    energy=Energy(model,pt.tensor(v,dtype=pt.double),dx=dx,mu=0)
+                    energy=Energy(model,pt.tensor(v[0:gs_n.shape[0]],dtype=pt.double),dx=dx,mu=0)
 
 
                     engml,_, _ = energy.ml_calculation(pt.tensor(gs_n,dtype=pt.double))
@@ -216,6 +218,9 @@ class ResultsAnalysis:
                     zgs, _ = model.Encoder(
                     pt.tensor(gs_n).double().unsqueeze(1)
                     )
+                    y=model.Decoder(zgs)
+                    y=y.squeeze().detach().numpy()
+                    y_recon.append(y)
                     zgs = zgs.squeeze()
                     z_gs.append(z_gs)
 
@@ -244,6 +249,7 @@ class ResultsAnalysis:
                 self.gs_n.append(y_gs)
                 self.min_z.append(z_min)
                 self.gs_z.append(z_gs)
+                self.recon_n.append(y_recon)
 
     def _comparison(self):
 
@@ -264,6 +270,8 @@ class ResultsAnalysis:
         self.list_devde_ml=[]
         self.list_devde_r=[]
         self.list_devde_l=[]
+        self.list_dn_l=[]
+        self.list_devdn_l=[]
 
         for i in range(len(self.min_eng)):
 
@@ -294,19 +302,41 @@ class ResultsAnalysis:
             devde_r=[]
             de_l=[]
             devde_l=[]
+            av_dn_l=[]
+            devdn_l=[]
             dx = self.dx
 
             for j in range(len(self.min_eng[i])):
                 dns.append(
                     np.sqrt(
-                        np.trapz(
+                        np.sum(
                             (self.min_n[i][j] - self.gs_n[i][j]) ** 2,
-                            dx=self.dx,
+                            
                             axis=1,
                         )
                     )
-                    / np.sqrt(np.trapz(self.gs_n[i][j] ** 2, dx=self.dx, axis=1))
+                    / np.sqrt(np.sum(self.gs_n[i][j] ** 2,  axis=1))
                 )
+                av_dn_l.append(
+                    np.average(np.sqrt(
+                        np.sum(
+                            (self.min_n[i][j] - self.recon_n[i][j]) ** 2,
+                            
+                            axis=1,
+                        )
+                    )
+                    / np.sqrt(np.sum(self.recon_n[i][j] ** 2, axis=1))
+                ) )
+                devdn_l.append(
+                    np.average(np.sqrt(
+                        np.sum(
+                            (self.min_n[i][j] - self.recon_n[i][j]) ** 2,
+                            
+                            axis=1,
+                        )
+                    )
+                    / np.sqrt(np.sum(self.recon_n[i][j] ** 2, axis=1))
+                ) )
                 dn_abs_error.append(
                     np.trapz(
                         np.abs(self.min_n[i][j] - self.gs_n[i][j]), dx=self.dx, axis=1
@@ -411,6 +441,8 @@ class ResultsAnalysis:
             self.list_devde_ml.append(devde_ml)
             self.list_devde_l.append(devde_l)
             self.list_devde_r.append(devde_r)
+            self.list_dn_l.append(av_dn_l)
+            self.list_devdn_l.append(devdn_l)
 
     def plot_results(
         self,
@@ -432,12 +464,11 @@ class ResultsAnalysis:
                 x=position[i],
                 y=des,
                 yerr=self.list_devde[i], #/ np.sqrt(self.gs_eng[i][0].shape[0] - 1),
-                label=labels[i],
+                label=labels[i]+f' ({des[-1]:.4f})',
                 linewidth=3,
             )
-        plt.axhline(y=self.list_de_ml[-1][0],color='blue',linestyle='--',label='ml')
-        plt.axhline(y=self.list_de_r[-1][0],color='black',linestyle='--',label='recon')
-        
+        plt.axhline(y=self.list_de_ml[-1][-1],color='blue',linestyle='--',label=f'ml ({self.list_de_ml[-1][-1]:.4f}) ')
+        plt.axhline(y=self.list_de_r[-1][-1],color='black',linestyle='--',label=f'best recon ({self.list_de_r[-1][-1]:.4f})')
         plt.ylabel(r"$\mathbb{E}(|\Delta e|)$", fontsize=20)
         plt.xlabel(xlabel, fontsize=20)
         plt.xticks(labels=xticks, ticks=xposition)
@@ -455,7 +486,7 @@ class ResultsAnalysis:
         plt.legend(fontsize=15)
         plt.title(title)
         if loglog:
-            plt.semilogx()
+            plt.loglog()
         plt.show()
 
         fig = plt.figure(figsize=(10, 10))
@@ -467,6 +498,7 @@ class ResultsAnalysis:
                 label=labels[i],
                 linewidth=3,
             )
+        
         plt.ylabel(r"$\mathbb{E}(|\Delta e_{ML}|)$", fontsize=20)
         plt.xlabel(xlabel, fontsize=20)
         plt.xticks(labels=xticks, ticks=xposition)
@@ -495,6 +527,8 @@ class ResultsAnalysis:
                 linewidth=3,
             )
             
+        plt.axhline(y=self.list_de_ml[-1][-1],color='blue',linestyle='--',label=f'ml ({self.list_de_ml[-1][-1]:.4f}) ')
+        plt.axhline(y=self.list_de_r[-1][-1],color='black',linestyle='--',label=f'best recon ({self.list_de_r[-1][-1]:.4f})')
         plt.ylabel(r"$\mathbb{E}(|\Delta e_{Local}|)$", fontsize=20)
         plt.xlabel(xlabel, fontsize=20)
         plt.xticks(labels=xticks, ticks=xposition)
@@ -525,6 +559,8 @@ class ResultsAnalysis:
                 linewidth=3,
             )
         plt.ylabel(r"$\mathbb{E}(|\Delta e_{recon}|)$", fontsize=20)
+        plt.axhline(y=self.list_de_ml[-1][-1],color='blue',linestyle='--',label=f'ml ({self.list_de_ml[-1][-1]:.4f}) ')
+        plt.axhline(y=self.list_de_r[-1][-1],color='black',linestyle='--',label=f'best recon ({self.list_de_r[-1][-1]:.4f})')
         plt.xlabel(xlabel, fontsize=20)
         plt.xticks(labels=xticks, ticks=xposition)
         plt.tick_params(
@@ -580,7 +616,38 @@ class ResultsAnalysis:
                 label=labels[i],
                 linewidth=3,
             )
+        plt.axhline(y=0.01,color='blue',linestyle='--',label=f'error threshold 1% ')
         plt.ylabel(r"$\mathbb{E}(|\Delta n|/|n|)$", fontsize=20)
+        plt.xlabel(xlabel, fontsize=20)
+        plt.xticks(labels=xticks, ticks=xposition)
+        if yticks != None:
+            plt.yticks(yticks["dn"])
+        plt.tick_params(
+            top=True,
+            right=True,
+            labeltop=False,
+            labelright=False,
+            direction="in",
+            labelsize=15,
+            width=3,
+        )
+        plt.legend(fontsize=15)
+        plt.title(title)
+        if loglog:
+            plt.semilogx()
+        plt.show()
+
+        fig = plt.figure(figsize=(10, 10))
+        for i, dn in enumerate(self.list_dn_l):
+            plt.errorbar(
+                x=position[i],
+                y=dn,
+                yerr=self.list_devdn_l[i], #/ np.sqrt(self.gs_eng[i][0].shape[0] - 1),
+                label=labels[i],
+                linewidth=3,
+            )
+        plt.axhline(y=0.01,color='blue',linestyle='--',label=f'error threshold 1% ')
+        plt.ylabel(r"$\mathbb{E}(|\Delta n_l|/|n|)$", fontsize=20)
         plt.xlabel(xlabel, fontsize=20)
         plt.xticks(labels=xticks, ticks=xposition)
         if yticks != None:
@@ -785,7 +852,9 @@ class ResultsAnalysis:
         color: List,
         fill: List,
         range_eng: Tuple,
+        range_eng_l:Tuple,
         range_n: Tuple,
+        range_n_l:Tuple,
     ):
         dn_overall=[]
         de_overall=[]
@@ -811,7 +880,49 @@ class ResultsAnalysis:
                     histtype="step",
                 )
                 dn_overall.append(dn)
+        
+        
+        plt.axvline(x=0.01,label='1% threshold',linestyle='--',color='black')
         plt.xlabel(r"$|\Delta n|/|n|$", fontsize=20)
+        plt.legend(fontsize=15, loc="best")
+        plt.tick_params(
+            top=True,
+            right=True,
+            labeltop=False,
+            labelright=False,
+            direction="in",
+            labelsize=15,
+            width=3,
+        )
+        if title != None:
+            plt.title(title)
+        plt.show()
+
+        fig = plt.figure(figsize=(10, 10))
+        for eni, i in enumerate(idx):
+            for enj, j in enumerate(jdx):
+                dn = np.sqrt(
+                    self.dx*np.sum(
+                        (self.min_n[i][j] - self.recon_n[i][j]) ** 2, axis=1
+                    )
+                )/ np.sqrt(self.dx*np.sum(self.recon_n[i][j] ** 2, axis=1))
+                plt.hist(
+                    dn,
+                    bins,
+                    label=self.text[i][j],
+                    range=range_n_l,
+                    density=density,
+                    alpha=alpha,
+                    hatch=hatch[eni][enj],
+                    fill=fill[eni][enj],
+                    color=color[eni][enj],
+                    histtype="step",
+                )
+
+        
+        
+        plt.axvline(x=0.01,label='1% threshold',linestyle='--',color='black')
+        plt.xlabel(r"$|\Delta n_l|/|n|$", fontsize=20)
         plt.legend(fontsize=15, loc="best")
         plt.tick_params(
             top=True,
@@ -844,6 +955,8 @@ class ResultsAnalysis:
                 )
                 de_overall.append(de)
 
+        plt.axvline(x=self.list_de_ml[-1][-1],label='ml',linestyle='--',color='black')
+        plt.axvline(x=self.list_de_r[-1][-1],label='best recon',linestyle='-.',color='blue')
         plt.xlabel(r"$\Delta e/e$", fontsize=20)
         plt.legend(fontsize=15, loc="upper left")
         plt.tick_params(
@@ -858,6 +971,40 @@ class ResultsAnalysis:
         if title != None:
             plt.title(title)
         plt.show()
+
+        fig = plt.figure(figsize=(10, 10))
+        for eni, i in enumerate(idx):
+            for enj, j in enumerate(jdx):
+                de = (self.min_eng[i][j] - self.r_eng[i][j]) / self.gs_eng[i][j]
+                plt.hist(
+                    de,
+                    bins,
+                    label=self.text[i][j],
+                    density=density,
+                    alpha=alpha,
+                    range=range_eng_l,
+                    hatch=hatch[eni][enj],
+                    fill=fill[eni][enj],
+                    color=color[eni][enj],
+                    histtype="step",
+                )
+                de_overall.append(de)
+
+        plt.xlabel(r"$\Delta e_l/e$", fontsize=20)
+        plt.legend(fontsize=15, loc="upper left")
+        plt.tick_params(
+            top=True,
+            right=True,
+            labeltop=False,
+            labelright=False,
+            direction="in",
+            labelsize=15,
+            width=3,
+        )
+        if title != None:
+            plt.title(title)
+        plt.show()
+
 
         return dn_overall,de_overall
 

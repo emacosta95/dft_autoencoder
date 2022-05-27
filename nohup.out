@@ -1,8 +1,0 @@
-Traceback (most recent call last):
-  File "/home/ecosta/dft_autoencoder/run.py", line 116, in <module>
-    gd = GradientDescent(
-TypeError: __init__() missing 1 required positional argument: 'init_path'
-Traceback (most recent call last):
-  File "/home/ecosta/dft_autoencoder/run.py", line 124, in <module>
-    gd = GradientDescent(
-TypeError: __init__() got an unexpected keyword argument 'init_path'
