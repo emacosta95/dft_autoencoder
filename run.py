@@ -50,8 +50,8 @@ parser.add_argument(
 parser.add_argument(
     "--mu",
     type=float,
-    help="Chemical potential for the normalization, softconstrain (default=None)",
-    default=None,
+    help="Chemical potential for the normalization, softconstrain (default=0)",
+    default=0,
 )
 
 

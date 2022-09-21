@@ -30,7 +30,7 @@ def make_data_loader(
 
     data = np.load(file_name)
     n = data["density"]
-    v = data["potential"]
+    #v = data["potential"]
     f = data["F"]
 
     #func = eng - (14 / 256) * np.sum(v * n, axis=1)

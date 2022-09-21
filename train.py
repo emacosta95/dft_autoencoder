@@ -4,7 +4,7 @@ import torch as pt
 import numpy as np
 from torch.nn.modules import pooling
 from tqdm import tqdm, trange
-from src.model import DFTVAE, DFTVAEnorm
+from src.model import DFTVAE, DFTVAEDense, DFTVAEIsing, DFTVAEnorm
 from src.training.utils import (
     make_data_loader,
     get_optimizer,
@@ -24,14 +24,14 @@ import os
 parser = argparse.ArgumentParser()
 subparsers = parser.add_subparsers()
 
-parser.add_argument("--load", type=bool, help="Loading or not the model", default=False)
+parser.add_argument("--load", type=bool, help="Loading or not the model",action=argparse.BooleanOptionalAction,)
 parser.add_argument("--name", type=str, help="name of the model", default=None)
 
 parser.add_argument(
     "--data_path",
     type=str,
-    help="seed for pytorch and numpy (default=data/final_dataset/data_train.npz)",
-    default="data/final_dataset/data_train.npz",
+    help="seed for pytorch and numpy (default=data/dataset_meyer/dataset_meyer_test_256_15k_a_1-10_b_04-06_c_003-01.npz)",
+    default="data/dataset_meyer/dataset_meyer_test_256_15k_a_1-10_b_04-06_c_003-01.npz",
 )
 
 parser.add_argument(
@@ -73,8 +73,8 @@ parser.add_argument(
 parser.add_argument(
     "--lr",
     type=float,
-    help="learning rate (default=0.0001)",
-    default=0.0001,
+    help="learning rate (default=0.001)",
+    default=0.001,
 )
 
 parser.add_argument(
@@ -88,8 +88,15 @@ parser.add_argument(
 parser.add_argument(
     "--epochs",
     type=int,
-    help="training epochs (default=800)",
+    help="training epochs (default=1200)",
     default=1200,
+)
+
+parser.add_argument(
+    "--l",
+    type=float,
+    help="size of the box (default=1)",
+    default=1,
 )
 
 model_parser = subparsers.add_parser("model", help="model hparameters")
@@ -122,8 +129,8 @@ model_parser.add_argument(
 model_parser.add_argument(
     "--hidden_channels",
     type=int,
-    help="list of hidden channels (default=120)",
-    default=20,
+    help="list of hidden channels (default=60)",
+    default=60,
 )
 
 model_parser.add_argument(
@@ -151,22 +158,22 @@ model_parser.add_argument(
 model_parser.add_argument(
     "--padding_mode",
     type=str,
-    help="the padding mode of the model (default='circular')",
-    default="circular",
+    help="the padding mode of the model (default='zeros')",
+    default="zeros",
 )
 
 model_parser.add_argument(
     "--loss_parameter",
     type=float,
-    help="the amplitude of the kldiv (default=0.1)",
-    default=0.1,
+    help="the amplitude of the kldiv (default=1e-06)",
+    default=10**-6,
 )
 
 model_parser.add_argument(
     "--model_name",
     type=str,
-    help="name of the model (default='emodel_2_layer')",
-    default="emodel",
+    help="name of the model (default='cnn_for_gaussian')",
+    default="cnn_for_gaussian",
 )
 
 
@@ -269,7 +276,7 @@ def main(args):
         history_valid = []
         history_train = []
 
-        model = DFTVAE(
+        model = DFTVAEnorm(
             input_size=input_size,
             latent_dimension=args.latent_dimension,
             loss_generative=loss_func,
@@ -281,14 +288,16 @@ def main(args):
             padding_mode=padding_mode,
             pooling_size=pooling_size,
             output_size=output_size,
+            #hidden_neurons=[64,32,64]
             # only provisional
-            # dx=14 / 256,
+            dx=args.l/args.input_size,
         )
     model = model.to(pt.double)
     model = model.to(device=device)
 
     print(model)
     print(count_parameters(model))
+    print(args)
 
     train_dl, valid_dl = make_data_loader(
         file_name=file_name,

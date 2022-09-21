@@ -1,5 +1,5 @@
 from re import X
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 import torch
 import torch.nn as nn
 from torchmetrics import R2Score
@@ -22,7 +22,7 @@ class Encode(nn.Module):
         super().__init__()
 
         self.block_1 = nn.Sequential(
-            # nn.BatchNorm1d(input_channels),
+            #nn.BatchNorm1d(input_channels),
             nn.Conv1d(
                 in_channels=input_channels,
                 out_channels=hidden_channels,
@@ -37,46 +37,46 @@ class Encode(nn.Module):
         self.block_2 = nn.Sequential(
             nn.Conv1d(
                 in_channels=hidden_channels,
-                out_channels=hidden_channels,
+                out_channels=2*hidden_channels,
                 kernel_size=kernel_size,
                 padding=padding,
                 padding_mode="circular",
             ),
             nn.ReLU(),
             nn.AvgPool1d(kernel_size=pooling_size),
-            nn.BatchNorm1d(hidden_channels),
+            nn.BatchNorm1d(2*hidden_channels),
         )
         self.block_3 = nn.Sequential(
             nn.Conv1d(
-                in_channels=hidden_channels,
-                out_channels=hidden_channels,
+                in_channels=2*hidden_channels,
+                out_channels=4*hidden_channels,
                 kernel_size=kernel_size,
                 padding=padding,
                 padding_mode="circular",
             ),
             nn.ReLU(),
             nn.AvgPool1d(kernel_size=pooling_size),
-            nn.BatchNorm1d(hidden_channels),
+            nn.BatchNorm1d(4*hidden_channels),
         )
         self.final_mu = nn.Sequential(
             nn.Linear(
-                hidden_channels * int(input_size / (pooling_size ** 3)),
-                20,
+                4*hidden_channels * int(input_size / (pooling_size ** 3)),
+                100,
             ),
             nn.ReLU(),
-            nn.Linear(20,10),
+            nn.Linear(100,50),
             nn.ReLU(),
-            nn.Linear(10,latent_dimension)
-        )
+            nn.Linear(50,latent_dimension)
+         )
         self.final_logsigma = nn.Sequential(
             nn.Linear(
-                hidden_channels * int(input_size / (pooling_size ** 3)),
-                20,
+                4*hidden_channels * int(input_size / (pooling_size ** 3)),
+                100,
             ),
             nn.ReLU(),
-            nn.Linear(20,10),
+            nn.Linear(100,50),
             nn.ReLU(),
-            nn.Linear(10,latent_dimension)
+            nn.Linear(50,latent_dimension)
         )
 
     def forward(self, x: torch.Tensor) -> Tuple:
@@ -108,29 +108,22 @@ class Decode(nn.Module):
         self.pooling_size = pooling_size
 
         self.recon_block = nn.Sequential(
-            nn.Linear(
-                latent_dimension,
-                10,
-            ),
-            nn.ReLU(),
-            nn.Linear(10,20),
-            nn.ReLU(),
-            nn.Linear(20,int(output_size / (pooling_size) ** 3) * hidden_channels)
+            nn.Linear(latent_dimension,int(output_size / (pooling_size) ** 3) * hidden_channels*4)
         )
         self.block_conv1 = nn.Sequential(
             nn.ConvTranspose1d(
-                in_channels=hidden_channels,
-                out_channels=hidden_channels,
+                in_channels=4*hidden_channels,
+                out_channels=2*hidden_channels,
                 kernel_size=kernel_size + 1,
                 stride=2,
                 padding=padding,
             ),
             nn.ReLU(),
-            nn.BatchNorm1d(hidden_channels),
+            nn.BatchNorm1d(2*hidden_channels),
         )
         self.block_conv2 = nn.Sequential(
             nn.ConvTranspose1d(
-                in_channels=hidden_channels,
+                in_channels=2*hidden_channels,
                 out_channels=hidden_channels,
                 kernel_size=kernel_size + 1,
                 stride=2,
@@ -153,7 +146,7 @@ class Decode(nn.Module):
     def forward(self, z: torch.Tensor) -> torch.Tensor:
         z = self.recon_block(z)
         z = z.view(
-            -1, self.hidden_channel, int(self.output_size / (self.pooling_size ** 3))
+            -1, 4*self.hidden_channel, int(self.output_size / (self.pooling_size ** 3))
         )
         z = self.block_conv1(z)
         z = self.block_conv2(z)
@@ -710,4 +703,149 @@ class Energy(nn.Module):
         eng_2 = self.dx*torch.einsum('ai,ai->a',self.v,x)
         eng_2_trapz=torch.trapz(self.v*x,dx=self.dx,dim=1)
         return eng_1 + eng_2,eng_1+eng_2_trapz, x
+
+class DenseVAE(nn.Module):
+    def __init__(
+        self,
+        latent_dimension: int,
+        hidden_neurons:List,
+        input_size: int, 
+    ):
+
+        super().__init__()
+        
+        self.latent_dimension=latent_dimension
+        self.encoder = nn.ModuleList([])
+        self.input_size=input_size
+        for i in range(len(hidden_neurons)):
+            if i==0:
+                self.encoder.append(nn.Linear(input_size,hidden_neurons[i]))
+            else:
+                self.encoder.append(nn.Linear(hidden_neurons[i-1],hidden_neurons[i]))
+            self.encoder.append(nn.ReLU())
+        self.final_mu=nn.Linear(hidden_neurons[-1],latent_dimension)
+        self.latent_logvar=nn.Linear(hidden_neurons[-1],latent_dimension)    
+        self.encoder=nn.Sequential(*self.encoder)
+
+        self.decoder=nn.ModuleList([])
+        for i in range(len(hidden_neurons)):
+            if i==0:
+                self.decoder.append(nn.Linear(latent_dimension,hidden_neurons[-1-i]))
+            else:
+                self.decoder.append(nn.Linear(hidden_neurons[-i],hidden_neurons[-1-i]))
+            self.decoder.append(nn.ReLU())
+        self.decoder.append(nn.Linear(hidden_neurons[0],input_size))
+        #self.decoder.append(nn.Sigmoid())
+        self.decoder=nn.Sequential(*self.decoder)
+
+    def forward(self, x):
+        #x=x.squeeze(1)
+        x = self.encoder(x)
+        latent_mu=self.final_mu(x)
+        latent_logvar=self.latent_logvar(x)
+        latent = self.latent_sample(latent_mu, latent_logvar)
+        x_recon = self.decoder(latent)
+        #x_recon=x_recon.unsqueeze(1)
+        x_recon=x_recon.cos()
+        return x_recon, latent_mu, latent_logvar
+
+
+class DFTVAEDense(nn.Module):
+    def __init__(
+        self,
+        latent_dimension: int,
+        hidden_channels: int,
+        input_channels: int,
+        input_size: int,
+        padding: int,
+        padding_mode: str,
+        kernel_size: int,
+        pooling_size: int,
+        loss_generative: nn.Module,
+        loss_dft: nn.Module,
+        output_size: int,
+        hidden_neurons:List
+    ):
+
+        super().__init__()
+
+        self.loss_generative = loss_generative
+        self.loss_dft = loss_dft
+
+        self.VAE=DenseVAE(latent_dimension=latent_dimension,hidden_neurons=hidden_neurons,input_size=input_size)
+
+        self.DFTModel = Pilati_model_3_layer(
+            input_size=input_size,
+            input_channel=input_channels,
+            hidden_channel=hidden_channels,
+            padding=padding,
+            padding_mode=padding_mode,
+            kernel_size=kernel_size,
+            pooling_size=pooling_size,
+            output_size=output_size,
+        )
+
+    def forward(self, z: torch.Tensor):
+        x = self.VAE.decoder(z)
+        f = self.DFTModel(x)
+        x = x.view(x.shape[0], -1)
+        return x, f
+
+    def proposal(self, z: torch.Tensor):
+        x = self.VAE.decoder(z)
+        x = x.view(x.shape[0], -1)
+        return x
+
+    def functional(self, x: torch.Tensor):
+        x = x.unsqueeze(1)
+        return self.DFTModel(x)
+
+    def _latent_sample(self, mu, logvar):
+        if self.training:
+            # the reparameterization trick
+            std = (logvar * 0.5).exp()
+            return torch.distributions.Normal(loc=mu, scale=std).rsample()
+            # std = logvar.mul(0.5).exp_()
+            # eps = torch.empty_like(std).normal_()
+            # return eps.mul(std).add_(mu)
+        else:
+            return mu
+
+    def train_generative_step(self, batch: Tuple, device: str):
+        x = batch[0]
+        x = x.to(device=device)
+        w=self.VAE.encoder(x)
+        latent_mu=self.VAE.final_mu(w)
+        latent_logvar=self.VAE.latent_logvar(w)
+        #latent_mu, latent_logvar = self.VAE.encoder(x)
+        latent = self._latent_sample(latent_mu, latent_logvar)
+        x_recon = self.VAE.decoder(latent)
+        #print(x_recon.shape)
+        loss, kldiv = self.loss_generative(x_recon, x, latent_mu, latent_logvar)
+        return loss, kldiv.item()
+
+    def fit_dft_step(self, batch: Tuple, device: str):
+        x, y = batch
+        x = x.unsqueeze(1).to(device=device)
+        y = y.to(device=device)
+        x = self.DFTModel(x).squeeze()
+        loss = self.loss_dft(x, y)
+        return loss
+
+    def r2_computation(self, batch: Tuple, device: str, r2):
+        x, y = batch
+        x = x.unsqueeze(1).to(device=device)
+        x = self.DFTModel(x).to(device=device).squeeze()
+        r2.update(x.cpu().detach(), y.cpu().detach())
+        return r2
+    
+    def reconstruct(self,x):
+        #x = x.to(device=device)
+        w=self.VAE.encoder(x)
+        latent_mu=self.VAE.final_mu(w)
+        latent_logvar=self.VAE.latent_logvar(w)
+        #latent_mu, latent_logvar = self.VAE.encoder(x)
+        latent = self._latent_sample(latent_mu, latent_logvar)
+        x_recon = self.VAE.decoder(latent)
+        return x_recon
 

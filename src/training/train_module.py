@@ -61,6 +61,8 @@ def fit(
 
     loss_func = loss_func
 
+    mae=nn.L1Loss(reduction='mean')
+
     wait = 0
     if supervised:
         r_max = -100000
@@ -103,6 +105,8 @@ def fit(
         for batch in valid_dl:
             if supervised:
                 r2 = model.r2_computation(batch, device, r2)
+                loss = model.fit_dft_step(batch, device)
+                loss_ave_valid+=loss.item()
             else:
                 loss, kldiv = model.train_generative_step(batch, device)
                 loss_ave_valid += loss.item()
@@ -114,6 +118,7 @@ def fit(
         for batch in train_dl:
             if supervised:
                 r2 = model.r2_computation(batch, device, r2)
+                
             else:
                 loss, kldiv = model.train_generative_step(batch, device)
                 loss_ave_train += loss.item()
@@ -121,7 +126,7 @@ def fit(
         if supervised:
             r_ave_valid = r2.compute()
             r2.reset()
-
+            loss_ave_valid = loss_ave_valid / len(valid_dl)
             history_train.append(r_ave_train)
             history_valid.append(r_ave_valid)
             print(r_ave_valid)
@@ -184,6 +189,7 @@ def fit(
                 f"R_ave_overfitting={r_ave_train} \n"
                 f"R_ave_valid={r_ave_valid} \n"
                 f"R_max={r_max} \n"
+                f"loss_ave_valid={loss_ave_valid} \n"
                 f"epochs={epoch}\n"
             )
         else:

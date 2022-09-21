@@ -6,7 +6,7 @@ import torch as pt
 import torch.nn as nn
 import numpy as np
 from src.model import Energy
-from tqdm import tqdm, trange
+from tqdm.notebook import tqdm, trange
 import matplotlib.pyplot as plt
 from scipy import fft, ifft
 import random
@@ -295,6 +295,7 @@ class GradientDescentDiagnostic:
             elif epoch % 100 == 0:
                 history = pt.cat((history, eng.detach().view(1, eng.shape[0])), dim=0)
 
+            
             eng_old = eng.detach()
 
             # if epoch % 1000 == 0:
@@ -311,10 +312,16 @@ class GradientDescentDiagnostic:
             #     plt.show()
 
             idxmin = pt.argmin(eng)
-            # tqdm_bar.set_description(
-            #     f"eng={(eng[idxmin]).item():.3f},norm={np.sum(n_z[idxmin],axis=0)*self.dx:.3f}"
-            # )
+            tqdm_bar.set_description(
+                f"eng={(eng[idxmin]).item()-self.e_target[idx]:.5f},norm={np.sum(n_z[idxmin],axis=0)*self.dx:.3f}"
+            )
             tqdm_bar.refresh()
+
+            if epoch % 1000==0:
+                plt.plot(n_z[idxmin])
+                plt.plot(self.n_target[idx])
+                plt.show()    
+
     
         return history
 
@@ -493,25 +500,25 @@ class GradientDescentDiagnostic:
 
 #%%
 
-n_instances=10
+n_instances=1
 loglr=-1
 cut=128
-logdiffsoglia=-1
-n_ensambles=20
-target_path='data/final_dataset/data_test.npz'
-model_name='normMSE_20_hc_13_ks_2_ps_16_ls_1e-06_vb'
-epochs=20000
+logdiffsoglia=-2
+n_ensambles=1
+target_path='data/dataset_meyer/dataset_meyer_test_256_100.npz'
+model_name='meyer_case/cnn_for_gaussian_test_3_60_hc_13_ks_2_ps_16_ls_0.001_vb'
+epochs=10000
 variable_lr=False
 final_lr=0
 early_stopping=False
-L=14
+L=1
 resolution=256
 latent_dimension=16
 seed=42
 num_threads=10
 device='cpu'
 mu=0
-init_path='data/final_dataset/data_train.npz'
+init_path='data/dataset_meyer/dataset_meyer_test_256_15k_a_1-10_b_04-06_c_003-01.npz'
 
 
 

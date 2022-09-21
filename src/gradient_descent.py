@@ -301,7 +301,7 @@ class GradientDescent:
 
             idxmin = pt.argmin(eng)
             tqdm_bar.set_description(
-                f"eng={(eng[idxmin]).item():.3f},norm={np.sum(n_z[idxmin],axis=0)*self.dx:.3f}"
+                f"eng={(eng[idxmin]).item()-self.e_target[idx]:.5f},norm={np.sum(n_z[idxmin],axis=0)*self.dx:.3f}"
             )
             tqdm_bar.refresh()
 
@@ -466,13 +466,13 @@ class GradientDescent:
         # save the numpy values
         if idx != 0:
             np.savez(
-                "gradient_descent_ensamble_numpy/min_vs_gs_gradient_descent_"
-                + session_name,
+                "data/gradient_descent_data/"
+                + session_name+'_energy',
                 min_energy=self.min_engs[epoch],
                 gs_energy=self.e_target[0 : (self.min_engs[epoch].shape[0])],
             )
             np.savez(
-                "gradient_descent_ensamble_numpy/min_density_" + session_name,
+                "data/gradient_descent_data/" + session_name+'_density',
                 min_density=self.min_ns[epoch],
                 gs_density=self.n_target[0 : self.min_ns[epoch].shape[0]],
                 z=self.min_z[epoch],
