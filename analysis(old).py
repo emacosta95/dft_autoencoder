@@ -22,7 +22,7 @@ print(f'av_pot={av_pot:.4f}')
 #%% only for testing
 ls = [16]
 
-models_name = [[f"meyer_case/cnn_for_gaussian_test_4_60_hc_13_ks_2_ps_16_ls_0.01_vb" ] for v in ls]
+models_name = [[f"meyer_case/cnn_for_gaussian_test_5_60_hc_13_ks_2_ps_16_ls_0.1_vb" ] for v in ls]
 
 n_sample = len(ls)
 n_ensambles = None
@@ -48,9 +48,9 @@ yticks = {
 }
 xticks = [i * 4000 for i in range(11)]
 
-n_sample = 30
+n_sample = 1
 n_hc = len(hparam)
-n_instances = [[105] * n_sample] * n_hc
+n_instances = [[100] * n_sample] * n_hc
 n_ensambles = [[n_init] * n_sample for n_init in hparam]
 epochs = [
     [ i * 1000 for i in range(n_sample)],
@@ -68,7 +68,7 @@ lr = [[1] * n_sample] * n_hc
 
 n_sample = [n_sample] * n_hc
 
-only_testing = True
+only_testing = False
 
 #%% Gradient descent different epochs
 hparam = [30000,15000]
@@ -228,7 +228,7 @@ epochs = [
     [30000 for i in range(n_sample)],
 ] * n_hc
 diff_soglia = [[1] * n_sample] * n_hc
-models_name = [[f"normMSE_20_hc_13_ks_2_ps_16_ls_{v}_vb"  for v in xticks]]*n_hc
+models_name = [[f"meyer_case/cnn_for_gaussian_test_3_60_hc_13_ks_2_ps_16_ls_0.001_vb"  for v in xticks]]*n_hc
 text = [
     [f"ls={ls} " for ls in xticks]
     for i, label in enumerate(labels)

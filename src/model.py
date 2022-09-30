@@ -17,6 +17,7 @@ class Encode(nn.Module):
         padding_mode: str,
         kernel_size: int,
         pooling_size: int,
+        activation:nn.Module
     ):
 
         super().__init__()
@@ -30,7 +31,7 @@ class Encode(nn.Module):
                 padding=padding,
                 padding_mode="circular",
             ),
-            nn.ReLU(),
+            activation,
             nn.AvgPool1d(kernel_size=pooling_size),
             nn.BatchNorm1d(hidden_channels),
         )
@@ -42,7 +43,7 @@ class Encode(nn.Module):
                 padding=padding,
                 padding_mode="circular",
             ),
-            nn.ReLU(),
+            activation,
             nn.AvgPool1d(kernel_size=pooling_size),
             nn.BatchNorm1d(2*hidden_channels),
         )
@@ -54,7 +55,7 @@ class Encode(nn.Module):
                 padding=padding,
                 padding_mode="circular",
             ),
-            nn.ReLU(),
+            activation,
             nn.AvgPool1d(kernel_size=pooling_size),
             nn.BatchNorm1d(4*hidden_channels),
         )
@@ -63,9 +64,9 @@ class Encode(nn.Module):
                 4*hidden_channels * int(input_size / (pooling_size ** 3)),
                 100,
             ),
-            nn.ReLU(),
+            activation,
             nn.Linear(100,50),
-            nn.ReLU(),
+            activation,
             nn.Linear(50,latent_dimension)
          )
         self.final_logsigma = nn.Sequential(
@@ -73,9 +74,9 @@ class Encode(nn.Module):
                 4*hidden_channels * int(input_size / (pooling_size ** 3)),
                 100,
             ),
-            nn.ReLU(),
+            activation,
             nn.Linear(100,50),
-            nn.ReLU(),
+            activation,
             nn.Linear(50,latent_dimension)
         )
 
@@ -166,6 +167,7 @@ class DecodeNorm(nn.Module):
         padding_mode: str,
         kernel_size: int,
         pooling_size: int,
+        activation:nn.Module,
         dx: float,
     ):
         super().__init__()
@@ -188,7 +190,7 @@ class DecodeNorm(nn.Module):
                 stride=2,
                 padding=padding,
             ),
-            nn.ReLU(),
+            activation,
             nn.BatchNorm1d(hidden_channels),
         )
         self.block_conv2 = nn.Sequential(
@@ -199,7 +201,7 @@ class DecodeNorm(nn.Module):
                 stride=2,
                 padding=padding,
             ),
-            nn.ReLU(),
+            activation,
             nn.BatchNorm1d(hidden_channels),
         )
         self.block_conv3 = nn.Sequential(
@@ -283,8 +285,7 @@ class VarAE(nn.Module):
         else:
             return mu
 
-
-class Pilati_model_3_layer(nn.Module):
+class DFT_model_5_layer(nn.Module):
     def __init__(
         self,
         input_size: int,
@@ -306,7 +307,16 @@ class Pilati_model_3_layer(nn.Module):
                 padding=padding,
                 padding_mode=padding_mode,
             ),
-            nn.ReLU(),
+            nn.Softplus(),
+            nn.Conv1d(
+                in_channels=hidden_channel,
+                out_channels=hidden_channel,
+                kernel_size=kernel_size,
+                stride=1,
+                padding=padding,
+                padding_mode=padding_mode,
+            ),
+            nn.Softplus(),
             nn.AvgPool1d(kernel_size=pooling_size),
         )
         self.model_2 = nn.Sequential(
@@ -318,7 +328,16 @@ class Pilati_model_3_layer(nn.Module):
                 padding=padding,
                 padding_mode=padding_mode,
             ),
-            nn.ReLU(),
+            nn.Softplus(),
+            nn.Conv1d(
+                in_channels=hidden_channel,
+                out_channels=hidden_channel,
+                kernel_size=kernel_size,
+                stride=1,
+                padding=padding,
+                padding_mode=padding_mode,
+            ),
+            nn.Softplus(),
             nn.AvgPool1d(kernel_size=pooling_size),
         )
         self.model_3 = nn.Sequential(
@@ -330,7 +349,132 @@ class Pilati_model_3_layer(nn.Module):
                 padding=padding,
                 padding_mode=padding_mode,
             ),
-            nn.ReLU(),
+            nn.Softplus(),
+            nn.Conv1d(
+                in_channels=hidden_channel,
+                out_channels=hidden_channel,
+                kernel_size=kernel_size,
+                stride=1,
+                padding=padding,
+                padding_mode=padding_mode,
+            ),
+            nn.Softplus(),
+            nn.AvgPool1d(kernel_size=pooling_size),
+        )
+
+        self.model_4 = nn.Sequential(
+            nn.Conv1d(
+                in_channels=hidden_channel,
+                out_channels=hidden_channel,
+                kernel_size=kernel_size,
+                stride=1,
+                padding=padding,
+                padding_mode=padding_mode,
+            ),
+            nn.Softplus(),
+            nn.Conv1d(
+                in_channels=hidden_channel,
+                out_channels=hidden_channel,
+                kernel_size=kernel_size,
+                stride=1,
+                padding=padding,
+                padding_mode=padding_mode,
+            ),
+            nn.Softplus(),
+            nn.AvgPool1d(kernel_size=pooling_size),
+        )
+
+        self.model_5 = nn.Sequential(
+            nn.Conv1d(
+                in_channels=hidden_channel,
+                out_channels=hidden_channel,
+                kernel_size=kernel_size,
+                stride=1,
+                padding=padding,
+                padding_mode=padding_mode,
+            ),
+            nn.Softplus(),
+            nn.Conv1d(
+                in_channels=hidden_channel,
+                out_channels=hidden_channel,
+                kernel_size=kernel_size,
+                stride=1,
+                padding=padding,
+                padding_mode=padding_mode,
+            ),
+            nn.Softplus(),
+            nn.AvgPool1d(kernel_size=pooling_size),
+        )
+
+        self.flat = nn.Flatten()
+
+        self.final_dense = nn.Sequential(
+            nn.Linear(hidden_channel * int(256 / pooling_size ** 5), 20),
+            nn.Softplus(),
+            nn.Linear(20,1)
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.model_1(x)
+        x = self.model_2(x)
+        x = self.model_3(x)
+        x = self.model_4(x)
+        x = self.model_5(x)
+        x = self.flat(x)
+        x = self.final_dense(x)
+
+        return x
+
+
+
+class Pilati_model_3_layer(nn.Module):
+    def __init__(
+        self,
+        input_size: int,
+        input_channel: int,
+        hidden_channel: int,
+        output_size: int,
+        kernel_size: int,
+        padding: int,
+        padding_mode: str,
+        pooling_size: int,
+        activation:nn.Module
+    ):
+        super().__init__()
+        self.model_1 = nn.Sequential(
+            nn.Conv1d(
+                in_channels=input_channel,
+                out_channels=hidden_channel,
+                kernel_size=kernel_size,
+                stride=1,
+                padding=padding,
+                padding_mode=padding_mode,
+            ),
+            activation,
+            nn.AvgPool1d(kernel_size=pooling_size),
+        )
+        self.model_2 = nn.Sequential(
+            nn.Conv1d(
+                in_channels=hidden_channel,
+                out_channels=hidden_channel,
+                kernel_size=kernel_size,
+                stride=1,
+                padding=padding,
+                padding_mode=padding_mode,
+            ),
+            activation,
+            nn.AvgPool1d(kernel_size=pooling_size),
+        )
+        self.model_3 = nn.Sequential(
+            nn.Conv1d(
+                in_channels=hidden_channel,
+                out_channels=hidden_channel,
+                kernel_size=kernel_size,
+                stride=1,
+                padding=padding,
+                padding_mode=padding_mode,
+            ),
+            activation,
             nn.AvgPool1d(kernel_size=pooling_size),
         )
 
@@ -338,7 +482,7 @@ class Pilati_model_3_layer(nn.Module):
 
         self.final_dense = nn.Sequential(
             nn.Linear(hidden_channel * int(256 / pooling_size ** 3), 20),
-            nn.ReLU(),
+            activation,
             nn.Linear(20,1)
         )
 
@@ -571,6 +715,7 @@ class DFTVAEnorm(nn.Module):
         loss_generative: nn.Module,
         loss_dft: nn.Module,
         output_size: int,
+        activation:nn.Module,
         dx: float,
     ):
 
@@ -588,6 +733,7 @@ class DFTVAEnorm(nn.Module):
             kernel_size=kernel_size,
             input_size=input_size,
             pooling_size=pooling_size,
+            activation=activation
         )
         self.Decoder = DecodeNorm(
             latent_dimension=latent_dimension,
@@ -598,6 +744,7 @@ class DFTVAEnorm(nn.Module):
             kernel_size=kernel_size,
             output_size=input_size,
             pooling_size=pooling_size,
+            activation=activation,
             dx=dx,
         )
         self.DFTModel = Pilati_model_3_layer(
@@ -608,6 +755,118 @@ class DFTVAEnorm(nn.Module):
             padding_mode=padding_mode,
             kernel_size=kernel_size,
             pooling_size=pooling_size,
+            output_size=output_size,
+            activation=activation
+        )
+
+    def forward(self, z: torch.Tensor):
+        x = self.Decoder(z)
+        f = self.DFTModel(x)
+        x = x.view(x.shape[0], -1)
+        return x, f
+
+    def proposal(self, z: torch.Tensor):
+        x = self.Decoder(z)
+        x = x.view(x.shape[0], -1)
+        return x
+
+    def functional(self, x: torch.Tensor):
+        x = x.unsqueeze(1)
+        return self.DFTModel(x)
+
+    def _latent_sample(self, mu, logvar):
+        if self.training:
+            # the reparameterization trick
+            std = (logvar * 0.5).exp()
+            return torch.distributions.Normal(loc=mu, scale=std).rsample()
+            # std = logvar.mul(0.5).exp_()
+            # eps = torch.empty_like(std).normal_()
+            # return eps.mul(std).add_(mu)
+        else:
+            return mu
+
+    def train_generative_step(self, batch: Tuple, device: str):
+        x = batch[0]
+        x = x.unsqueeze(1).to(device=device)
+        latent_mu, latent_logvar = self.Encoder(x)
+        latent = self._latent_sample(latent_mu, latent_logvar)
+        x_recon = self.Decoder(latent)
+        loss, kldiv = self.loss_generative(x_recon, x, latent_mu, latent_logvar)
+        return loss, kldiv.item()
+
+    def fit_dft_step(self, batch: Tuple, device: str):
+        x, y = batch
+        x = x.unsqueeze(1).to(device=device)
+        y = y.to(device=device)
+        x = self.DFTModel(x).squeeze()
+        loss = self.loss_dft(x, y)
+        return loss
+
+    def r2_computation(self, batch: Tuple, device: str, r2):
+        x, y = batch
+        x = x.unsqueeze(1).to(device=device)
+        x = self.DFTModel(x).to(device=device).squeeze()
+        r2.update(x.cpu().detach(), y.cpu().detach())
+        return r2
+
+
+class DFTVAEnormHeavy(nn.Module):
+    def __init__(
+        self,
+        latent_dimension: int,
+        hidden_channels: int,
+        input_channels: int,
+        input_size: int,
+        padding: int,
+        padding_mode: str,
+        kernel_size: int,
+        pooling_size: int,
+        loss_generative: nn.Module,
+        loss_dft: nn.Module,
+        output_size: int,
+        pooling_size_dft:int,
+        kernel_size_dft:int,
+        hidden_channels_dft:int,
+        padding_dft:int,
+        dx: float,
+    ):
+
+        super().__init__()
+
+        self.loss_generative = loss_generative
+        self.loss_dft = loss_dft
+
+        self.Encoder = Encode(
+            latent_dimension=latent_dimension,
+            hidden_channels=hidden_channels,
+            input_channels=input_channels,
+            padding=padding,
+            padding_mode=padding_mode,
+            kernel_size=kernel_size,
+            input_size=input_size,
+            pooling_size=pooling_size,
+            activation=nn.Softplus(),
+        )
+        self.Decoder = DecodeNorm(
+            latent_dimension=latent_dimension,
+            hidden_channels=hidden_channels,
+            output_channels=input_channels,
+            padding=padding,
+            padding_mode=padding_mode,
+            kernel_size=kernel_size,
+            output_size=input_size,
+            pooling_size=pooling_size,
+            activation=nn.Softplus(),
+            dx=dx,
+        )
+        self.DFTModel = DFT_model_5_layer(
+            input_size=input_size,
+            input_channel=input_channels,
+            hidden_channel=hidden_channels_dft,
+            padding=padding_dft,
+            padding_mode=padding_mode,
+            kernel_size=kernel_size_dft,
+            pooling_size=pooling_size_dft,
             output_size=output_size,
         )
 
@@ -660,6 +919,7 @@ class DFTVAEnorm(nn.Module):
         x = self.DFTModel(x).to(device=device).squeeze()
         r2.update(x.cpu().detach(), y.cpu().detach())
         return r2
+
 
 
 class Energy(nn.Module):

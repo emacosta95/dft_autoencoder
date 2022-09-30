@@ -46,6 +46,7 @@ def smooth_grad(grad: pt.tensor, cut: int) -> pt.tensor:
 class GradientDescentDiagnostic:
     def __init__(
         self,
+        idx_instance:int,
         n_instances: int,
         loglr: int,
         cut: int,
@@ -65,11 +66,13 @@ class GradientDescentDiagnostic:
         device: str,
         mu: float,
         init_path: str,
+        eps_value:float,
     ):
 
         self.device = device
         self.num_threads = num_threads
         self.seed = seed
+        self.eps_value=eps_value
 
         self.early_stopping = early_stopping
         self.variable_lr = variable_lr
@@ -96,7 +99,10 @@ class GradientDescentDiagnostic:
         self.n_target = np.load(target_path)["density"]
         self.v_target = np.load(target_path)["potential"]
         self.e_target = np.load(target_path)["energy"]
+        self.f_target=np.load(target_path)['F']
         self.init_path = init_path
+
+        
 
         self.model_name = model_name
 
@@ -121,6 +127,13 @@ class GradientDescentDiagnostic:
         self.total_history=None
 
         self.epochs = epochs
+
+        self.history_energy=[]
+        self.history_f=[]
+        self.history_density=[]
+        self.history_z_module=[]
+        self.history_z=[]
+        self.history_id_max_component=[]
 
     def run(self) -> None:
         """This function runs the entire process of gradient descent for each instance."""
@@ -266,6 +279,7 @@ class GradientDescentDiagnostic:
         history = pt.tensor([], device=self.device)
         # exact_history = np.array([])
         eng_old = pt.tensor(0, device=self.device)
+        n_old=np.zeros(256)
 
         # refresh the lr every time
         if self.early_stopping:
@@ -275,6 +289,7 @@ class GradientDescentDiagnostic:
 
         # start the gradient descent
         tqdm_bar = tqdm(range(self.epochs))
+        z_old=np.zeros(latent_dimension)
         for epoch in tqdm_bar:
 
             if self.mu != None:
@@ -290,10 +305,12 @@ class GradientDescentDiagnostic:
             if self.variable_lr:
                 self.lr = self.lr * self.ratio  # ONLY WITH FIXED EPOCHS
 
+            
             if epoch == 0:
                 history = eng.detach().view(1, eng.shape[0])
             elif epoch % 100 == 0:
                 history = pt.cat((history, eng.detach().view(1, eng.shape[0])), dim=0)
+
 
             
             eng_old = eng.detach()
@@ -311,16 +328,44 @@ class GradientDescentDiagnostic:
             #         plt.plot(history[:,i].detach().numpy())
             #     plt.show()
 
+            
             idxmin = pt.argmin(eng)
+
+            
+            z_t=z.detach().numpy()[idxmin]
+
+            id_maxvar_component=np.argmax(np.abs(z_t))
+            if epoch==0:
+                self.history_z=z_t.reshape(1,-1)
+            else:
+                self.history_z=np.append(self.history_z,z_t.reshape(1,-1),axis=0)
+
+            self.history_id_max_component.append(id_maxvar_component)
+
+
+            dn_t=self.dx*np.sum(np.abs(n_z[idx]-n_old))
+            if dn_t<self.eps_value*(self.lr):
+                self.lr=0
+
+            n_old=n_z[idxmin]
+
+            
+            f_ml=eng[idxmin].item()-self.dx*np.sum(self.v_target[idx]*n_z[idxmin])
             tqdm_bar.set_description(
-                f"eng={(eng[idxmin]).item()-self.e_target[idx]:.5f},norm={np.sum(n_z[idxmin],axis=0)*self.dx:.3f}"
+                f"de={(eng[idxmin]).item()-self.e_target[idx]:.5f}, df={(f_ml-self.f_target[idx]):.5f},dn_t={dn_t:.8f} |z|={pt.linalg.norm(z[idxmin]).item():.4f} idx_maxvarz={id_maxvar_component}"
             )
             tqdm_bar.refresh()
 
-            if epoch % 1000==0:
+            if epoch % 5000==0:
                 plt.plot(n_z[idxmin])
                 plt.plot(self.n_target[idx])
                 plt.show()    
+
+            dn=self.dx*np.sum(np.abs(n_z[idxmin]-self.n_target[idx]))
+            self.history_density.append(dn)
+            self.history_energy.append(eng[idxmin].item()-self.e_target[idx])
+            self.history_f.append(-1*self.f_target[idx]+f_ml)
+            self.history_z_module.append(pt.linalg.norm(z[idxmin]).item())
 
     
         return history
@@ -500,14 +545,17 @@ class GradientDescentDiagnostic:
 
 #%%
 
+idx_instance=1
 n_instances=1
 loglr=-1
 cut=128
-logdiffsoglia=-2
+logdiffsoglia=-1
 n_ensambles=1
 target_path='data/dataset_meyer/dataset_meyer_test_256_100.npz'
-model_name='meyer_case/cnn_for_gaussian_test_3_60_hc_13_ks_2_ps_16_ls_0.001_vb'
-epochs=10000
+#target_path='data/final_dataset/data_test.npz'
+model_name='meyer_case/cnn_softplus_for_gaussian_test_1_60_hc_13_ks_2_ps_16_ls_0.001_vb'
+#model_name='speckle_case/normMSE_60_hc_13_ks_2_ps_16_ls_1e-06_vb'
+epochs=25000
 variable_lr=False
 final_lr=0
 early_stopping=False
@@ -519,10 +567,11 @@ num_threads=10
 device='cpu'
 mu=0
 init_path='data/dataset_meyer/dataset_meyer_test_256_15k_a_1-10_b_04-06_c_003-01.npz'
-
+#init_path='data/final_dataset/data_train.npz'
 
 
 gd = GradientDescentDiagnostic(
+    idx_instance=idx_instance,
     n_instances=n_instances,
     loglr=loglr,
     cut=128,
@@ -542,20 +591,34 @@ gd = GradientDescentDiagnostic(
     device=device,
     mu=mu,
     init_path=init_path,
+    eps_value=10**-6,
 )
 
 #%%
 
 history=gd.run()
 # %%
-import matplotlib.pyplot as plt
-import numpy as np
-
-hist=np.load('history_vb_0.1.npy')
-
-print(hist.shape)
-# %%
-plt.plot(hist[-3,0:10])
+start=1000
+stop=-1
+plt.plot(gd.history_energy[start:stop],label='e')
+plt.plot((gd.history_f[start:stop]),label='f')
 #plt.loglog()
+#plt.plot(gd.history_density[start:stop],label='n')
+plt.axhline(0.0,color='red')
+plt.legend(fontsize=20)
 plt.show()
+
+# %%
+plt.plot(gd.history_z_module[start:stop],label='f')
+plt.legend(fontsize=20)
+plt.show()
+# %% component variation of z
+history_z=np.asarray(gd.history_z)
+print(history_z.shape)
+for i in range(latent_dimension):
+    plt.plot(history_z[:,i],label=f'idx_z={i}')
+    #plt.loglog()
+    #plt.legend(fontsize=20)
+plt.show()
+
 # %%

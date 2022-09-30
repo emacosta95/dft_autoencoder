@@ -1,10 +1,11 @@
 from pyexpat import model
 import random
+from types import ModuleType
 import torch as pt
 import numpy as np
 from torch.nn.modules import pooling
 from tqdm import tqdm, trange
-from src.model import DFTVAE, DFTVAEDense, DFTVAEIsing, DFTVAEnorm
+from src.model import DFTVAE, DFTVAEDense, DFTVAEIsing, DFTVAEnorm, DFTVAEnormHeavy
 from src.training.utils import (
     make_data_loader,
     get_optimizer,
@@ -108,6 +109,12 @@ model_parser.add_argument(
     default="False",
 )
 
+model_parser.add_argument(
+    "--ModelType",
+    type=str,
+    help="if the model is generative or not (default=True)",
+    default="False",
+)
 
 model_parser.add_argument(
     "--input_channels", type=int, help="# input channels (default=1)", default=1
@@ -176,6 +183,40 @@ model_parser.add_argument(
     default="cnn_for_gaussian",
 )
 
+# pooling_size_dft=args.pooling_size_dft,
+# kernel_size_dft=args.kernel_size_dft,
+# hidden_channels_dft=args.hidden_channels_dft,
+# padding_dft=args.padding_dft,
+
+model_parser.add_argument(
+    "--padding_dft",
+    type=int,
+    help="padding size (default=6)",
+    default=6,
+)
+
+
+model_parser.add_argument(
+    "--kernel_size_dft",
+    type=int,
+    help="kernel size (default=13)",
+    default=13,
+)
+
+
+model_parser.add_argument(
+    "--pooling_size_dft",
+    type=int,
+    help="pooling size (default=1)",
+    default=1,
+)
+
+model_parser.add_argument(
+    "--hidden_channels_dft",
+    type=int,
+    help="hidden channels dft nn (default=30)",
+    default=30,
+)
 
 def main(args):
 
@@ -276,22 +317,46 @@ def main(args):
         history_valid = []
         history_train = []
 
-        model = DFTVAEnorm(
-            input_size=input_size,
-            latent_dimension=args.latent_dimension,
-            loss_generative=loss_func,
-            loss_dft=nn.MSELoss(),
-            input_channels=input_channel,
-            hidden_channels=hc,
-            kernel_size=kernel_size,
-            padding=padding,
-            padding_mode=padding_mode,
-            pooling_size=pooling_size,
-            output_size=output_size,
-            #hidden_neurons=[64,32,64]
-            # only provisional
-            dx=args.l/args.input_size,
-        )
+        if args.ModelType=='DFTVAEnorm':
+
+            model = DFTVAEnorm(
+                input_size=input_size,
+                latent_dimension=args.latent_dimension,
+                loss_generative=loss_func,
+                loss_dft=nn.MSELoss(),
+                input_channels=input_channel,
+                hidden_channels=hc,
+                kernel_size=kernel_size,
+                padding=padding,
+                padding_mode=padding_mode,
+                pooling_size=pooling_size,
+                output_size=output_size,
+                activation=nn.Softplus(),
+                # only provisional
+                dx=args.l/args.input_size,
+            )
+
+        if args.ModelType=='DFTVAEnormHeavy':
+
+            model = DFTVAEnormHeavy(
+                input_size=input_size,
+                latent_dimension=args.latent_dimension,
+                loss_generative=loss_func,
+                loss_dft=nn.MSELoss(),
+                input_channels=input_channel,
+                hidden_channels=hc,
+                kernel_size=kernel_size,
+                padding=padding,
+                padding_mode=padding_mode,
+                pooling_size=pooling_size,
+                output_size=output_size,
+                pooling_size_dft=args.pooling_size_dft,
+                kernel_size_dft=args.kernel_size_dft,
+                hidden_channels_dft=args.hidden_channels_dft,
+                padding_dft=args.padding_dft,
+                #activation=nn.Softplus(),
+                dx=args.l/args.input_size,
+            )
     model = model.to(pt.double)
     model = model.to(device=device)
 

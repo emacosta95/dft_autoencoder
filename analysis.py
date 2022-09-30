@@ -12,21 +12,30 @@ from torch.utils.data import Dataset, TensorDataset, DataLoader
 import matplotlib.pyplot as plt
 from torchmetrics import R2Score
 from src.model import Energy
-from src.utils_analysis import dataloader
-
+from src.utils_analysis import dataloader, test_models_dft,test_models_vae
 
 #%% Meyer study
 
 ls = 16
-model_name = f"meyer_case/cnn_for_gaussian_test_3_60_hc_13_ks_2_ps_16_ls_0.001_vb" 
+model_name = f"meyer_case/cnn_softplus_for_gaussian_test_1_60_hc_13_ks_2_ps_16_ls_0.001_vb" 
+#model_name=f"meyer_case/cnn_for_gaussian_test_5_60_hc_13_ks_2_ps_16_ls_0.1_vb"
+#model_name=f"meyer_case/cnn_for_gaussian_test_4_60_hc_13_ks_2_ps_16_ls_0.01_vb"
 n_ensambles = 1
 n_instances = 250
-epochs = 10000
+epochs = 25000
 diff_soglia = -1
 variable_lr = False
 early_stopping = False
 lr = 1
 
+data_path_test='data/dataset_meyer/dataset_meyer_test_256_100.npz'
+
+# test the models
+dn=test_models_vae(model_name=model_name,data_path=data_path_test,batch_size=100,plot=False,text='test')
+r2,mae=test_models_dft(model_name=model_name,data_path=data_path_test,text='test')
+
+print(dn)
+print(r2,mae*627)
 
 #%%
 
@@ -47,5 +56,5 @@ v=np.load('data/dataset_meyer/dataset_meyer_test_256_100.npz')['potential']
 f_gs=e_gs-np.average(n_gs*v[:n_gs.shape[0]])
 f_min=e_min-np.average(n_min*v[:n_min.shape[0]])
 
-print(np.average(np.abs(f_gs-f_min)))
+print(np.average(np.abs(f_gs-f_min))*627)
 # %%

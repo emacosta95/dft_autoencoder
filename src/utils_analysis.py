@@ -10,7 +10,7 @@ from tqdm.notebook import tqdm, trange
 from torch.utils.data import Dataset, TensorDataset, DataLoader
 import matplotlib.pyplot as plt
 from torchmetrics import R2Score
-
+from src.training.utils import count_parameters
 from src.model import Energy
 
 
@@ -85,3 +85,79 @@ def dataloader(
         history_n = data["history_n"]
 
         return history, history_n
+
+def test_models_dft(model_name, data_path: str,text:str):
+        r2 = R2Score()
+        n_std = np.load(data_path)["density"]
+        F_std = np.load(data_path)["F"]
+        ds = TensorDataset(pt.tensor(n_std).view(-1, n_std.shape[-1]), pt.tensor(F_std))
+        dl = DataLoader(ds, batch_size=100)
+        model = pt.load(
+            "model_dft_pytorch/" + model_name, map_location="cpu"
+        )
+        model.eval()
+        model = model.to(dtype=pt.double)
+
+        mae_ave=0
+        for batch in dl:
+            model.eval()
+            model.r2_computation(batch, device="cpu", r2=r2)
+            model.to(device='cpu')
+            x,f=batch
+            f_ml=model.functional(x).view(-1)
+            mae=pt.mean(pt.abs(f-f_ml)).item()
+            mae_ave+=mae
+
+        print(model)
+        print(f"# parameters={count_parameters(model)}")
+        print(f"R_square_test={r2.compute()} for {text} \n")
+
+        r_square=r2.compute()
+        r2.reset()
+
+        return r_square,mae_ave/len(dl)
+
+def test_models_vae(model_name, data_path: str, batch_size: int, plot: bool,text:str
+):
+
+    n_std = np.load(data_path)["density"]
+    F_std = np.load(data_path)["F"]
+    ds = TensorDataset(pt.tensor(n_std).view(-1, 1, n_std.shape[-1]))
+    dl = DataLoader(ds, batch_size=batch_size)
+
+    model = pt.load(
+        "model_dft_pytorch/" + model_name, map_location="cpu"
+    )
+    model.eval()
+    model = model.to(dtype=pt.double)
+    Dn = 0
+
+    for k, batch in enumerate(dl):
+        model.eval()
+        mu, _ = model.Encoder(batch[0].double())
+        n_recon = model.Decoder(mu)
+        n_recon = n_recon.squeeze().detach().numpy()
+        print(n_recon.shape)
+        print(batch[0].shape)
+        if plot:
+            plt.plot(
+                batch[0][0].detach().squeeze().numpy(), label="original"
+            )
+            plt.plot(n_recon[0], label="reconstruction")
+            plt.legend(fontsize=20)
+            plt.show()
+        dn = np.sqrt(
+            np.sum(
+                (n_recon - batch[0].detach().squeeze().numpy()) ** 2, axis=1
+            )
+        ) / np.sqrt(
+            np.sum((batch[0].detach().squeeze().numpy()) ** 2, axis=1)
+        )
+        Dn += np.average(dn)
+
+        print(model)
+        print(f"# parameters={count_parameters(model)}")
+        print(f"Dn={Dn/len(dl)} for {text} \n")
+        accuracy_vae=(Dn / len(dl))
+
+        return accuracy_vae
