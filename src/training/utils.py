@@ -1,4 +1,4 @@
-from typing import List, Dict, Tuple
+from typing import List, Dict, Optional, Tuple
 import numpy as np
 import argparse
 import torch as pt
@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 from torchmetrics import R2Score
 
 from src.model import Energy
+
 
 def make_data_loader(
     file_name: str, split: float, bs: int, generative: bool, img: bool = False
@@ -30,28 +31,35 @@ def make_data_loader(
 
     data = np.load(file_name)
     n = data["density"]
-    #v = data["potential"]
+    # v = data["potential"]
     f = data["F"]
 
-    #func = eng - (14 / 256) * np.sum(v * n, axis=1)
+    # func = eng - (14 / 256) * np.sum(v * n, axis=1)
     if img is True:
         n = n.reshape(n.shape[0], 1, n.shape[1])
     n_train = int(n.shape[0] * split)
 
     if generative:
-        train_ds = TensorDataset(pt.tensor(n[0:n_train],dtype=pt.double))
-        valid_ds = TensorDataset(pt.tensor(n[n_train:],dtype=pt.double))
+        train_ds = TensorDataset(pt.tensor(n[0:n_train], dtype=pt.double))
+        valid_ds = TensorDataset(pt.tensor(n[n_train:], dtype=pt.double))
     else:
-        train_ds = TensorDataset(pt.tensor(n[0:n_train],dtype=pt.double), pt.tensor(f[0:n_train],dtype=pt.double))
-        valid_ds = TensorDataset(pt.tensor(n[n_train:],dtype=pt.double), pt.tensor(f[n_train:],dtype=pt.double))
+        train_ds = TensorDataset(
+            pt.tensor(n[0:n_train], dtype=pt.double),
+            pt.tensor(f[0:n_train], dtype=pt.double),
+        )
+        valid_ds = TensorDataset(
+            pt.tensor(n[n_train:], dtype=pt.double),
+            pt.tensor(f[n_train:], dtype=pt.double),
+        )
 
     train_dl = DataLoader(train_ds, bs, shuffle=True)
-    valid_dl = DataLoader(valid_ds, 2 * bs)
+    valid_dl = DataLoader(valid_ds, bs)  # removed the double bs
     return train_dl, valid_dl
 
 
-
-def get_optimizer(model: pt.nn.Module, lr: int) -> pt.optim.Optimizer:
+def get_optimizer(
+    model: pt.nn.Module, lr: int, weight_decay=None
+) -> pt.optim.Optimizer:
     """This function fixies the optimizer
 
     Argument:
@@ -59,7 +67,7 @@ def get_optimizer(model: pt.nn.Module, lr: int) -> pt.optim.Optimizer:
     model: the model which should be trained, related to the Optimizer
     lr: learning rate of the optimization process
     """
-    opt = pt.optim.Adam(model.parameters(), lr=lr)
+    opt = pt.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     return opt
 
 
@@ -140,7 +148,7 @@ class ResultsAnalysis:
         lr: List,
         dx: float,
         postnormalization: bool,
-        v:np.array
+        v: np.array,
     ):
         self.models_name = models_name
         self.text = text
@@ -151,10 +159,10 @@ class ResultsAnalysis:
 
         self.min_eng = []
         self.gs_eng = []
-        self.r_eng=[]
-        self.ml_eng=[]
+        self.r_eng = []
+        self.ml_eng = []
         self.min_n = []
-        self.recon_n=[]
+        self.recon_n = []
         self.gs_n = []
         self.min_z = []
         self.gs_z = []
@@ -165,14 +173,13 @@ class ResultsAnalysis:
 
                 x_min = []
                 x_gs = []
-                x_r=[]
-                x_ml=[]
+                x_r = []
+                x_ml = []
                 y_min = []
                 y_gs = []
                 z_min = []
-                z_gs=[]
-                y_recon=[]
-                
+                z_gs = []
+                y_recon = []
 
                 for j in range(len(epochs[i])):
 
@@ -202,31 +209,36 @@ class ResultsAnalysis:
                         variable_lr=variable_lr[i][j],
                     )
 
-                    
                     model = pt.load(
-                    "model_dft_pytorch/" + self.models_name[i][j], map_location="cpu"
+                        "model_dft_pytorch/" + self.models_name[i][j],
+                        map_location="cpu",
                     )
                     model.eval()
                     model = model.to(dtype=pt.double)
 
-                    energy=Energy(model,pt.tensor(v[0:gs_n.shape[0]],dtype=pt.double),dx=dx,mu=0)
-
-
-                    engml,_, _ = energy.ml_calculation(pt.tensor(gs_n,dtype=pt.double))
-                    engml=engml.detach().numpy()
-
-                    zgs, _ = model.Encoder(
-                    pt.tensor(gs_n).double().unsqueeze(1)
+                    energy = Energy(
+                        model,
+                        pt.tensor(v[0 : gs_n.shape[0]], dtype=pt.double),
+                        dx=dx,
+                        mu=0,
                     )
-                    y=model.Decoder(zgs)
-                    y=y.squeeze().detach().numpy()
+
+                    engml, _, _ = energy.ml_calculation(
+                        pt.tensor(gs_n, dtype=pt.double)
+                    )
+                    engml = engml.detach().numpy()
+
+                    zgs, _ = model.Encoder(pt.tensor(gs_n).double().unsqueeze(1))
+                    y = model.Decoder(zgs)
+                    y = y.squeeze().detach().numpy()
                     y_recon.append(y)
                     zgs = zgs.squeeze()
                     z_gs.append(z_gs)
 
-                    engr,_, _ = energy.batch_calculation(pt.tensor(zgs,dtype=pt.double))
-                    engr=engr.detach().numpy()
-
+                    engr, _, _ = energy.batch_calculation(
+                        pt.tensor(zgs, dtype=pt.double)
+                    )
+                    engr = engr.detach().numpy()
 
                     if postnormalization:
                         norm = np.sum(min_n, axis=1) * dx
@@ -264,14 +276,14 @@ class ResultsAnalysis:
         self.list_abs_err_n = []
         self.list_R_square = []
         self.list_R_square_energy = []
-        self.list_de_ml=[]
-        self.list_de_r=[]
-        self.list_de_l=[]
-        self.list_devde_ml=[]
-        self.list_devde_r=[]
-        self.list_devde_l=[]
-        self.list_dn_l=[]
-        self.list_devdn_l=[]
+        self.list_de_ml = []
+        self.list_de_r = []
+        self.list_de_l = []
+        self.list_devde_ml = []
+        self.list_devde_r = []
+        self.list_devde_l = []
+        self.list_dn_l = []
+        self.list_devdn_l = []
 
         for i in range(len(self.min_eng)):
 
@@ -296,14 +308,14 @@ class ResultsAnalysis:
             gs_ns = []
             dns = []
             des = []
-            des_ml=[]
-            devde_ml=[]
-            des_r=[]
-            devde_r=[]
-            de_l=[]
-            devde_l=[]
-            av_dn_l=[]
-            devdn_l=[]
+            des_ml = []
+            devde_ml = []
+            des_r = []
+            devde_r = []
+            de_l = []
+            devde_l = []
+            av_dn_l = []
+            devdn_l = []
             dx = self.dx
 
             for j in range(len(self.min_eng[i])):
@@ -311,32 +323,33 @@ class ResultsAnalysis:
                     np.sqrt(
                         np.sum(
                             (self.min_n[i][j] - self.gs_n[i][j]) ** 2,
-                            
                             axis=1,
                         )
                     )
-                    / np.sqrt(np.sum(self.gs_n[i][j] ** 2,  axis=1))
+                    / np.sqrt(np.sum(self.gs_n[i][j] ** 2, axis=1))
                 )
                 av_dn_l.append(
-                    np.average(np.sqrt(
-                        np.sum(
-                            (self.min_n[i][j] - self.recon_n[i][j]) ** 2,
-                            
-                            axis=1,
+                    np.average(
+                        np.sqrt(
+                            np.sum(
+                                (self.min_n[i][j] - self.recon_n[i][j]) ** 2,
+                                axis=1,
+                            )
                         )
+                        / np.sqrt(np.sum(self.recon_n[i][j] ** 2, axis=1))
                     )
-                    / np.sqrt(np.sum(self.recon_n[i][j] ** 2, axis=1))
-                ) )
+                )
                 devdn_l.append(
-                    np.average(np.sqrt(
-                        np.sum(
-                            (self.min_n[i][j] - self.recon_n[i][j]) ** 2,
-                            
-                            axis=1,
+                    np.average(
+                        np.sqrt(
+                            np.sum(
+                                (self.min_n[i][j] - self.recon_n[i][j]) ** 2,
+                                axis=1,
+                            )
                         )
+                        / np.sqrt(np.sum(self.recon_n[i][j] ** 2, axis=1))
                     )
-                    / np.sqrt(np.sum(self.recon_n[i][j] ** 2, axis=1))
-                ) )
+                )
                 dn_abs_error.append(
                     np.trapz(
                         np.abs(self.min_n[i][j] - self.gs_n[i][j]), dx=self.dx, axis=1
@@ -414,15 +427,40 @@ class ResultsAnalysis:
                 )
                 abs_err_n.append(np.average(dn_abs_error[j]))
 
-                des_r.append(np.average(np.abs(self.r_eng[i][j]-self.ml_eng[i][j])/self.ml_eng[i][j]))
-                devde_r.append(np.std(np.abs(self.r_eng[i][j]-self.ml_eng[i][j])/self.ml_eng[i][j]))
+                des_r.append(
+                    np.average(
+                        np.abs(self.r_eng[i][j] - self.ml_eng[i][j]) / self.ml_eng[i][j]
+                    )
+                )
+                devde_r.append(
+                    np.std(
+                        np.abs(self.r_eng[i][j] - self.ml_eng[i][j]) / self.ml_eng[i][j]
+                    )
+                )
 
-                de_l.append(np.average(np.abs(self.r_eng[i][j]-self.min_eng[i][j])/self.r_eng[i][j]))
-                devde_l.append(np.std(np.abs(self.r_eng[i][j]-self.min_eng[i][j])/self.r_eng[i][j]))
+                de_l.append(
+                    np.average(
+                        np.abs(self.r_eng[i][j] - self.min_eng[i][j]) / self.r_eng[i][j]
+                    )
+                )
+                devde_l.append(
+                    np.std(
+                        np.abs(self.r_eng[i][j] - self.min_eng[i][j]) / self.r_eng[i][j]
+                    )
+                )
 
-                des_ml.append(np.average(np.abs(self.ml_eng[i][j]-self.gs_eng[i][j])/self.gs_eng[i][j]))
-                devde_ml.append(np.std(np.abs(self.ml_eng[i][j]-self.gs_eng[i][j])/self.gs_eng[i][j]))
-                
+                des_ml.append(
+                    np.average(
+                        np.abs(self.ml_eng[i][j] - self.gs_eng[i][j])
+                        / self.gs_eng[i][j]
+                    )
+                )
+                devde_ml.append(
+                    np.std(
+                        np.abs(self.ml_eng[i][j] - self.gs_eng[i][j])
+                        / self.gs_eng[i][j]
+                    )
+                )
 
             self.list_de.append(av_eng_values)
             self.list_R_square.append(r_square)
@@ -463,12 +501,22 @@ class ResultsAnalysis:
             plt.errorbar(
                 x=position[i],
                 y=des,
-                yerr=self.list_devde[i], #/ np.sqrt(self.gs_eng[i][0].shape[0] - 1),
-                label=labels[i]+f' ({des[-1]:.4f})',
+                yerr=self.list_devde[i],  # / np.sqrt(self.gs_eng[i][0].shape[0] - 1),
+                label=labels[i] + f" ({des[-1]:.4f})",
                 linewidth=3,
             )
-        plt.axhline(y=self.list_de_ml[-1][-1],color='blue',linestyle='--',label=f'ml ({self.list_de_ml[-1][-1]:.4f}) ')
-        plt.axhline(y=self.list_de_r[-1][-1],color='black',linestyle='--',label=f'best recon ({self.list_de_r[-1][-1]:.4f})')
+        plt.axhline(
+            y=self.list_de_ml[-1][-1],
+            color="blue",
+            linestyle="--",
+            label=f"ml ({self.list_de_ml[-1][-1]:.4f}) ",
+        )
+        plt.axhline(
+            y=self.list_de_r[-1][-1],
+            color="black",
+            linestyle="--",
+            label=f"best recon ({self.list_de_r[-1][-1]:.4f})",
+        )
         plt.ylabel(r"$\mathbb{E}(|\Delta e|)$", fontsize=20)
         plt.xlabel(xlabel, fontsize=20)
         plt.xticks(labels=xticks, ticks=xposition)
@@ -494,11 +542,13 @@ class ResultsAnalysis:
             plt.errorbar(
                 x=position[i],
                 y=des,
-                yerr=self.list_devde_ml[i], #/ np.sqrt(self.gs_eng[i][0].shape[0] - 1),
+                yerr=self.list_devde_ml[
+                    i
+                ],  # / np.sqrt(self.gs_eng[i][0].shape[0] - 1),
                 label=labels[i],
                 linewidth=3,
             )
-        
+
         plt.ylabel(r"$\mathbb{E}(|\Delta e_{ML}|)$", fontsize=20)
         plt.xlabel(xlabel, fontsize=20)
         plt.xticks(labels=xticks, ticks=xposition)
@@ -522,13 +572,23 @@ class ResultsAnalysis:
             plt.errorbar(
                 x=position[i],
                 y=des,
-                yerr=self.list_devde_l[i], #/ np.sqrt(self.gs_eng[i][0].shape[0] - 1),
+                yerr=self.list_devde_l[i],  # / np.sqrt(self.gs_eng[i][0].shape[0] - 1),
                 label=labels[i],
                 linewidth=3,
             )
-            
-        plt.axhline(y=self.list_de_ml[-1][-1],color='blue',linestyle='--',label=f'ml ({self.list_de_ml[-1][-1]:.4f}) ')
-        plt.axhline(y=self.list_de_r[-1][-1],color='black',linestyle='--',label=f'best recon ({self.list_de_r[-1][-1]:.4f})')
+
+        plt.axhline(
+            y=self.list_de_ml[-1][-1],
+            color="blue",
+            linestyle="--",
+            label=f"ml ({self.list_de_ml[-1][-1]:.4f}) ",
+        )
+        plt.axhline(
+            y=self.list_de_r[-1][-1],
+            color="black",
+            linestyle="--",
+            label=f"best recon ({self.list_de_r[-1][-1]:.4f})",
+        )
         plt.ylabel(r"$\mathbb{E}(|\Delta e_{Local}|)$", fontsize=20)
         plt.xlabel(xlabel, fontsize=20)
         plt.xticks(labels=xticks, ticks=xposition)
@@ -554,13 +614,23 @@ class ResultsAnalysis:
             plt.errorbar(
                 x=position[i],
                 y=des,
-                yerr=self.list_devde_r[i], #/ np.sqrt(self.gs_eng[i][0].shape[0] - 1),
+                yerr=self.list_devde_r[i],  # / np.sqrt(self.gs_eng[i][0].shape[0] - 1),
                 label=labels[i],
                 linewidth=3,
             )
         plt.ylabel(r"$\mathbb{E}(|\Delta e_{recon}|)$", fontsize=20)
-        plt.axhline(y=self.list_de_ml[-1][-1],color='blue',linestyle='--',label=f'ml ({self.list_de_ml[-1][-1]:.4f}) ')
-        plt.axhline(y=self.list_de_r[-1][-1],color='black',linestyle='--',label=f'best recon ({self.list_de_r[-1][-1]:.4f})')
+        plt.axhline(
+            y=self.list_de_ml[-1][-1],
+            color="blue",
+            linestyle="--",
+            label=f"ml ({self.list_de_ml[-1][-1]:.4f}) ",
+        )
+        plt.axhline(
+            y=self.list_de_r[-1][-1],
+            color="black",
+            linestyle="--",
+            label=f"best recon ({self.list_de_r[-1][-1]:.4f})",
+        )
         plt.xlabel(xlabel, fontsize=20)
         plt.xticks(labels=xticks, ticks=xposition)
         plt.tick_params(
@@ -577,7 +647,6 @@ class ResultsAnalysis:
         if loglog:
             plt.semilogx()
         plt.show()
-
 
         fig = plt.figure(figsize=(10, 10))
         for i, devde in enumerate(self.list_devde):
@@ -612,11 +681,11 @@ class ResultsAnalysis:
             plt.errorbar(
                 x=position[i],
                 y=dn,
-                yerr=self.list_devdn[i], #/ np.sqrt(self.gs_eng[i][0].shape[0] - 1),
+                yerr=self.list_devdn[i],  # / np.sqrt(self.gs_eng[i][0].shape[0] - 1),
                 label=labels[i],
                 linewidth=3,
             )
-        plt.axhline(y=0.01,color='blue',linestyle='--',label=f'error threshold 1% ')
+        plt.axhline(y=0.01, color="blue", linestyle="--", label=f"error threshold 1% ")
         plt.ylabel(r"$\mathbb{E}(|\Delta n|/|n|)$", fontsize=20)
         plt.xlabel(xlabel, fontsize=20)
         plt.xticks(labels=xticks, ticks=xposition)
@@ -642,11 +711,11 @@ class ResultsAnalysis:
             plt.errorbar(
                 x=position[i],
                 y=dn,
-                yerr=self.list_devdn_l[i], #/ np.sqrt(self.gs_eng[i][0].shape[0] - 1),
+                yerr=self.list_devdn_l[i],  # / np.sqrt(self.gs_eng[i][0].shape[0] - 1),
                 label=labels[i],
                 linewidth=3,
             )
-        plt.axhline(y=0.01,color='blue',linestyle='--',label=f'error threshold 1% ')
+        plt.axhline(y=0.01, color="blue", linestyle="--", label=f"error threshold 1% ")
         plt.ylabel(r"$\mathbb{E}(|\Delta n_l|/|n|)$", fontsize=20)
         plt.xlabel(xlabel, fontsize=20)
         plt.xticks(labels=xticks, ticks=xposition)
@@ -672,7 +741,7 @@ class ResultsAnalysis:
             plt.errorbar(
                 x=position[i],
                 y=dn,
-                yerr=self.list_devdn[i], #/ np.sqrt(self.gs_eng[i][0].shape[0] - 1),
+                yerr=self.list_devdn[i],  # / np.sqrt(self.gs_eng[i][0].shape[0] - 1),
                 label=labels[i],
                 linewidth=3,
             )
@@ -723,7 +792,9 @@ class ResultsAnalysis:
             plt.errorbar(
                 x=position[i],
                 y=des,
-                yerr=self.list_delta_devde[i], #/ np.sqrt(self.gs_eng[i][0].shape[0] - 1),
+                yerr=self.list_delta_devde[
+                    i
+                ],  # / np.sqrt(self.gs_eng[i][0].shape[0] - 1),
                 label=labels[i],
                 linewidth=3,
             )
@@ -748,7 +819,7 @@ class ResultsAnalysis:
             plt.errorbar(
                 x=position[i],
                 y=das,
-                yerr=self.list_dev_A[i], #/ np.sqrt(self.gs_eng[i][0].shape[0] - 1),
+                yerr=self.list_dev_A[i],  # / np.sqrt(self.gs_eng[i][0].shape[0] - 1),
                 label=labels[i],
                 linewidth=3,
             )
@@ -852,21 +923,19 @@ class ResultsAnalysis:
         color: List,
         fill: List,
         range_eng: Tuple,
-        range_eng_l:Tuple,
+        range_eng_l: Tuple,
         range_n: Tuple,
-        range_n_l:Tuple,
+        range_n_l: Tuple,
     ):
-        dn_overall=[]
-        de_overall=[]
+        dn_overall = []
+        de_overall = []
 
         fig = plt.figure(figsize=(10, 10))
         for eni, i in enumerate(idx):
             for enj, j in enumerate(jdx):
                 dn = np.sqrt(
-                    self.dx*np.sum(
-                        (self.min_n[i][j] - self.gs_n[i][j]) ** 2, axis=1
-                    )
-                )/ np.sqrt(self.dx*np.sum(self.gs_n[i][j] ** 2, axis=1))
+                    self.dx * np.sum((self.min_n[i][j] - self.gs_n[i][j]) ** 2, axis=1)
+                ) / np.sqrt(self.dx * np.sum(self.gs_n[i][j] ** 2, axis=1))
                 plt.hist(
                     dn,
                     bins,
@@ -880,9 +949,8 @@ class ResultsAnalysis:
                     histtype="step",
                 )
                 dn_overall.append(dn)
-        
-        
-        plt.axvline(x=0.01,label='1% threshold',linestyle='--',color='black')
+
+        plt.axvline(x=0.01, label="1% threshold", linestyle="--", color="black")
         plt.xlabel(r"$|\Delta n|/|n|$", fontsize=20)
         plt.legend(fontsize=15, loc="best")
         plt.tick_params(
@@ -902,10 +970,9 @@ class ResultsAnalysis:
         for eni, i in enumerate(idx):
             for enj, j in enumerate(jdx):
                 dn = np.sqrt(
-                    self.dx*np.sum(
-                        (self.min_n[i][j] - self.recon_n[i][j]) ** 2, axis=1
-                    )
-                )/ np.sqrt(self.dx*np.sum(self.recon_n[i][j] ** 2, axis=1))
+                    self.dx
+                    * np.sum((self.min_n[i][j] - self.recon_n[i][j]) ** 2, axis=1)
+                ) / np.sqrt(self.dx * np.sum(self.recon_n[i][j] ** 2, axis=1))
                 plt.hist(
                     dn,
                     bins,
@@ -919,9 +986,7 @@ class ResultsAnalysis:
                     histtype="step",
                 )
 
-        
-        
-        plt.axvline(x=0.01,label='1% threshold',linestyle='--',color='black')
+        plt.axvline(x=0.01, label="1% threshold", linestyle="--", color="black")
         plt.xlabel(r"$|\Delta n_l|/|n|$", fontsize=20)
         plt.legend(fontsize=15, loc="best")
         plt.tick_params(
@@ -955,8 +1020,12 @@ class ResultsAnalysis:
                 )
                 de_overall.append(de)
 
-        plt.axvline(x=self.list_de_ml[-1][-1],label='ml',linestyle='--',color='black')
-        plt.axvline(x=self.list_de_r[-1][-1],label='best recon',linestyle='-.',color='blue')
+        plt.axvline(
+            x=self.list_de_ml[-1][-1], label="ml", linestyle="--", color="black"
+        )
+        plt.axvline(
+            x=self.list_de_r[-1][-1], label="best recon", linestyle="-.", color="blue"
+        )
         plt.xlabel(r"$\Delta e/e$", fontsize=20)
         plt.legend(fontsize=15, loc="upper left")
         plt.tick_params(
@@ -1005,8 +1074,7 @@ class ResultsAnalysis:
             plt.title(title)
         plt.show()
 
-
-        return dn_overall,de_overall
+        return dn_overall, de_overall
 
     def test_models_dft(self, idx: List, jdx: List, data_path: str):
         self.r_square_list = []
@@ -1083,8 +1151,8 @@ class ResultsAnalysis:
         dn_i = []
         for i in idx:
             dn_j = []
-            zmin=[]
-            zgs=[]
+            zmin = []
+            zgs = []
             for j in jdx:
                 # load the model
                 model = pt.load(
@@ -1116,12 +1184,10 @@ class ResultsAnalysis:
 
         return dn_i
 
-
-            
     def decoding(self, idx: List, jdx: List):
         results = []
         for i in idx:
-            result=[]
+            result = []
             for j in jdx:
                 # load the model
                 model = pt.load(
@@ -1137,10 +1203,10 @@ class ResultsAnalysis:
             results.append(result)
         return results
 
-    def decoding_z(self, idx: List, jdx: List,z:pt.tensor):
+    def decoding_z(self, idx: List, jdx: List, z: pt.tensor):
         results = []
         for i in idx:
-            result=[]
+            result = []
             for j in jdx:
                 # load the model
                 model = pt.load(
@@ -1156,10 +1222,10 @@ class ResultsAnalysis:
             results.append(result)
         return results
 
-    def gs_energy_computation(self, idx: List, jdx: List, v: pt.Tensor,batch:bool):
+    def gs_energy_computation(self, idx: List, jdx: List, v: pt.Tensor, batch: bool):
         results = []
         for i in idx:
-            result=[]
+            result = []
             for j in jdx:
                 # load the model
                 model = pt.load(
@@ -1171,17 +1237,19 @@ class ResultsAnalysis:
                 energy = Energy(model, v=v, dx=self.dx, mu=0)
                 # propose n from z
                 if batch:
-                    eng,_, _ = energy.batch_calculation(pt.tensor(self.z_gs[i][j],dtype=pt.double))
+                    eng, _, _ = energy.batch_calculation(
+                        pt.tensor(self.z_gs[i][j], dtype=pt.double)
+                    )
                 else:
-                    eng,_, _,_ = energy(self.z_gs[i][j])                    
+                    eng, _, _, _ = energy(self.z_gs[i][j])
                 result.append(eng.detach().numpy())
             results.append(result)
         return results
 
-    def ml_eng_computation(self, idx: List, jdx: List, v: pt.Tensor,batch=True):
+    def ml_eng_computation(self, idx: List, jdx: List, v: pt.Tensor, batch=True):
         results = []
         for i in idx:
-            result=[]
+            result = []
             for j in jdx:
                 # load the model
                 model = pt.load(
@@ -1193,16 +1261,19 @@ class ResultsAnalysis:
                 energy = Energy(model, v=v, dx=self.dx, mu=0)
                 # propose n from z
                 if batch:
-                    eng,_, _ = energy.ml_calculation(pt.tensor(self.gs_n[i][j],dtype=pt.double))                 
+                    eng, _, _ = energy.ml_calculation(
+                        pt.tensor(self.gs_n[i][j], dtype=pt.double)
+                    )
                 result.append(eng.detach().numpy())
             results.append(result)
         return results
 
-
-    def energy_computation(self, idx: List, jdx: List, v: pt.Tensor,z:pt.Tensor,batch:bool):
+    def energy_computation(
+        self, idx: List, jdx: List, v: pt.Tensor, z: pt.Tensor, batch: bool
+    ):
         results = []
         for i in idx:
-            result=[]
+            result = []
             for j in jdx:
                 # load the model
                 model = pt.load(
@@ -1214,14 +1285,13 @@ class ResultsAnalysis:
                 energy = Energy(model, v=v, dx=self.dx, mu=0)
                 # propose n from z
                 if batch:
-                    eng,_, _ = energy(z)
+                    eng, _, _ = energy(z)
                 else:
-                    eng,_, _,_ = energy(z)                    
+                    eng, _, _, _ = energy(z)
                 result.append(eng)
             results.append(result)
         return results
 
-    
 
 def dataloader(
     type: str,

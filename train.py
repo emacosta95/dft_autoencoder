@@ -25,7 +25,12 @@ import os
 parser = argparse.ArgumentParser()
 subparsers = parser.add_subparsers()
 
-parser.add_argument("--load", type=bool, help="Loading or not the model",action=argparse.BooleanOptionalAction,)
+parser.add_argument(
+    "--load",
+    type=bool,
+    help="Loading or not the model",
+    action=argparse.BooleanOptionalAction,
+)
 parser.add_argument("--name", type=str, help="name of the model", default=None)
 
 parser.add_argument(
@@ -94,6 +99,13 @@ parser.add_argument(
 )
 
 parser.add_argument(
+    "--regularization",
+    type=float,
+    help="the weight decay, useful to avoid overfitting",
+    default=0.0,
+)
+
+parser.add_argument(
     "--l",
     type=float,
     help="size of the box (default=1)",
@@ -113,7 +125,7 @@ model_parser.add_argument(
     "--ModelType",
     type=str,
     help="if the model is generative or not (default=True)",
-    default="False",
+    default="DFTVAEnorm",
 )
 
 model_parser.add_argument(
@@ -173,14 +185,14 @@ model_parser.add_argument(
     "--loss_parameter",
     type=float,
     help="the amplitude of the kldiv (default=1e-06)",
-    default=10**-6,
+    default=10 ** -6,
 )
 
 model_parser.add_argument(
     "--model_name",
     type=str,
     help="name of the model (default='cnn_for_gaussian')",
-    default="cnn_for_gaussian",
+    default="cnn_softplus_noavgpooling_for_gaussian",
 )
 
 # pooling_size_dft=args.pooling_size_dft,
@@ -217,6 +229,7 @@ model_parser.add_argument(
     help="hidden channels dft nn (default=30)",
     default=30,
 )
+
 
 def main(args):
 
@@ -309,7 +322,7 @@ def main(args):
                 history_train = []
 
         print(len(history_train), len(history_valid))
-        model = pt.load(f"model_dft_pytorch/{args.name}",map_location=device)
+        model = pt.load(f"model_dft_pytorch/{args.name}", map_location=device)
         model.loss_dft = nn.MSELoss()
         model_name = args.name
     else:
@@ -317,7 +330,7 @@ def main(args):
         history_valid = []
         history_train = []
 
-        if args.ModelType=='DFTVAEnorm':
+        if args.ModelType == "DFTVAEnorm":
 
             model = DFTVAEnorm(
                 input_size=input_size,
@@ -327,16 +340,17 @@ def main(args):
                 input_channels=input_channel,
                 hidden_channels=hc,
                 kernel_size=kernel_size,
+                kernel_size_dft=args.kernel_size_dft,
                 padding=padding,
                 padding_mode=padding_mode,
                 pooling_size=pooling_size,
                 output_size=output_size,
                 activation=nn.Softplus(),
                 # only provisional
-                dx=args.l/args.input_size,
+                dx=args.l / args.input_size,
             )
 
-        if args.ModelType=='DFTVAEnormHeavy':
+        if args.ModelType == "DFTVAEnormHeavy":
 
             model = DFTVAEnormHeavy(
                 input_size=input_size,
@@ -354,8 +368,8 @@ def main(args):
                 kernel_size_dft=args.kernel_size_dft,
                 hidden_channels_dft=args.hidden_channels_dft,
                 padding_dft=args.padding_dft,
-                #activation=nn.Softplus(),
-                dx=args.l/args.input_size,
+                # activation=nn.Softplus(),
+                dx=args.l / args.input_size,
             )
     model = model.to(pt.double)
     model = model.to(device=device)
@@ -371,7 +385,7 @@ def main(args):
         generative=from_txt_to_bool(args.generative),
     )
 
-    opt = get_optimizer(lr=lr, model=model)
+    opt = get_optimizer(lr=lr, model=model, weight_decay=args.regularization)
     fit(
         supervised=not (from_txt_to_bool(args.generative)),
         model=model,
@@ -386,7 +400,7 @@ def main(args):
         loss_func=nn.MSELoss(),
         patiance=patiance,
         early_stopping=early_stopping,
-        device=device
+        device=device,
     )
 
     print(model)

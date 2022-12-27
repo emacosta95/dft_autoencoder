@@ -12,49 +12,105 @@ from torch.utils.data import Dataset, TensorDataset, DataLoader
 import matplotlib.pyplot as plt
 from torchmetrics import R2Score
 from src.model import Energy
-from src.utils_analysis import dataloader, test_models_dft,test_models_vae
+from src.utils_analysis import dataloader, test_models_dft, test_models_vae
 
 #%% Meyer study
 
 ls = 16
-model_name = f"meyer_case/cnn_softplus_for_gaussian_test_1_60_hc_13_ks_2_ps_16_ls_0.001_vb" 
-#model_name=f"meyer_case/cnn_for_gaussian_test_5_60_hc_13_ks_2_ps_16_ls_0.1_vb"
-#model_name=f"meyer_case/cnn_for_gaussian_test_4_60_hc_13_ks_2_ps_16_ls_0.01_vb"
+vb = "0.001"
+n_test = 2
+model_name = (
+    f"meyer_case/cnn_softplus_for_gaussian_231222_60_hc_13_ks_2_ps_{ls}_ls_{vb}_vb"
+)
+# model_name = "meyer_case/cnn_for_gaussian_60_hc_13_ks_2_ps_16_ls_1e-06_vb"
+# model_name=f"meyer_case/cnn_for_gaussian_test_5_60_hc_13_ks_2_ps_16_ls_0.1_vb"
+# model_name=f"meyer_case/cnn_for_gaussian_test_4_60_hc_13_ks_2_ps_16_ls_0.01_vb"
 n_ensambles = 1
 n_instances = 250
-epochs = 25000
+epochs = 10000
 diff_soglia = -1
 variable_lr = False
 early_stopping = False
 lr = 1
 
-data_path_test='data/dataset_meyer/dataset_meyer_test_256_100.npz'
-
+data_path_test = "data/dataset_meyer/dataset_meyer_test_256_100.npz"
+f = np.load(data_path_test)["F"]
 # test the models
-dn=test_models_vae(model_name=model_name,data_path=data_path_test,batch_size=100,plot=False,text='test')
-r2,mae=test_models_dft(model_name=model_name,data_path=data_path_test,text='test')
+dn = test_models_vae(
+    model_name=model_name,
+    data_path=data_path_test,
+    batch_size=10,
+    plot=True,
+    text="test",
+)
+r2, mae = test_models_dft(model_name=model_name, data_path=data_path_test, text="test")
 
 print(dn)
-print(r2,mae*627)
+print(r2, mae * 627)
 
 #%%
 
-n_min,n_gs,_=dataloader('density',model_name=model_name,n_instances=n_instances,lr=lr,diff_soglia=diff_soglia,epochs=epochs,early_stopping=early_stopping,variable_lr=variable_lr,n_ensambles=n_ensambles)
-e_min,e_gs=dataloader('energy',model_name=model_name,n_instances=n_instances,lr=lr,diff_soglia=diff_soglia,epochs=epochs,early_stopping=early_stopping,variable_lr=variable_lr,n_ensambles=n_ensambles)
+n_min, n_gs, _ = dataloader(
+    "density",
+    model_name=model_name,
+    n_instances=n_instances,
+    lr=lr,
+    diff_soglia=diff_soglia,
+    epochs=epochs,
+    early_stopping=early_stopping,
+    variable_lr=variable_lr,
+    n_ensambles=n_ensambles,
+)
+e_min, e_gs = dataloader(
+    "energy",
+    model_name=model_name,
+    n_instances=n_instances,
+    lr=lr,
+    diff_soglia=diff_soglia,
+    epochs=epochs,
+    early_stopping=early_stopping,
+    variable_lr=variable_lr,
+    n_ensambles=n_ensambles,
+)
 
 
 #%%
-for i in range(n_min.shape[0]):
+for i in range(10):
 
     plt.plot(n_min[i])
     plt.plot(n_gs[i])
     plt.show()
 
 # %%
-v=np.load('data/dataset_meyer/dataset_meyer_test_256_100.npz')['potential']
+v = np.load("data/dataset_meyer/dataset_meyer_test_256_100.npz")["potential"]
 
-f_gs=e_gs-np.average(n_gs*v[:n_gs.shape[0]])
-f_min=e_min-np.average(n_min*v[:n_min.shape[0]])
+f_gs = e_gs - np.average(n_gs * v[: n_gs.shape[0]], axis=-1)
+f_min = e_min - np.average(n_min * v[: n_min.shape[0]], axis=-1)
 
-print(np.average(np.abs(f_gs-f_min))*627)
+print(f_gs.shape, f_min.shape)
+
+print(np.average(np.abs(f_gs[0:10] - f_min[0:10])) * 627)
 # %%
+print(np.abs(f_gs - f_min)[0:10] * 627)
+# %%
+model = pt.load("model_dft_pytorch/" + model_name, map_location="cpu")
+model.eval()
+
+f_ml = (
+    model.functional(pt.tensor(n_min, dtype=pt.double)[0:1000])
+    .view(-1)
+    .detach()
+    .numpy()
+)
+
+# %%
+print(f_ml.shape)
+print(np.abs(f[: f_ml.shape[0]] - f_ml) * 627)
+# %%
+print(np.abs(e_min - e_gs) * 627)
+
+print(np.average(np.abs(e_min - e_gs) * 627))
+# %%
+plt.plot(n_min[4] - n_gs[4])
+# plt.plot(n_gs[4])
+plt.show()

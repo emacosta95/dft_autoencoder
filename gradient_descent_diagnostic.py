@@ -46,7 +46,7 @@ def smooth_grad(grad: pt.tensor, cut: int) -> pt.tensor:
 class GradientDescentDiagnostic:
     def __init__(
         self,
-        idx_instance:int,
+        idx_instance: int,
         n_instances: int,
         loglr: int,
         cut: int,
@@ -66,13 +66,13 @@ class GradientDescentDiagnostic:
         device: str,
         mu: float,
         init_path: str,
-        eps_value:float,
+        eps_value: float,
     ):
 
         self.device = device
         self.num_threads = num_threads
         self.seed = seed
-        self.eps_value=eps_value
+        self.eps_value = eps_value
 
         self.early_stopping = early_stopping
         self.variable_lr = variable_lr
@@ -96,13 +96,11 @@ class GradientDescentDiagnostic:
         self.diffsoglia = 10 ** logdiffsoglia
         self.n_ensambles = n_ensambles
 
-        self.n_target = np.load(target_path)["density"]
-        self.v_target = np.load(target_path)["potential"]
-        self.e_target = np.load(target_path)["energy"]
-        self.f_target=np.load(target_path)['F']
+        self.n_target = np.load(target_path)["density"][idx_instance:]
+        self.v_target = np.load(target_path)["potential"][idx_instance:]
+        self.e_target = np.load(target_path)["energy"][idx_instance:]
+        self.f_target = np.load(target_path)["F"][idx_instance:]
         self.init_path = init_path
-
-        
 
         self.model_name = model_name
 
@@ -124,16 +122,16 @@ class GradientDescentDiagnostic:
         self.min_exct_hist = {}
         self.eng_model_ref = {}
         self.min_z = {}
-        self.total_history=None
+        self.total_history = None
 
         self.epochs = epochs
 
-        self.history_energy=[]
-        self.history_f=[]
-        self.history_density=[]
-        self.history_z_module=[]
-        self.history_z=[]
-        self.history_id_max_component=[]
+        self.history_energy = []
+        self.history_f = []
+        self.history_density = []
+        self.history_z_module = []
+        self.history_z = []
+        self.history_id_max_component = []
 
     def run(self) -> None:
         """This function runs the entire process of gradient descent for each instance."""
@@ -166,13 +164,15 @@ class GradientDescentDiagnostic:
 
             # compute the gradient descent
             # for a single target sample
-            history=self._single_gradient_descent(z=z, idx=idx, model=model)
-            if idx==0:
-                self.total_history=history.unsqueeze(0).detach().numpy()
+            history = self._single_gradient_descent(z=z, idx=idx, model=model)
+            if idx == 0:
+                self.total_history = history.unsqueeze(0).detach().numpy()
             else:
-                self.total_history=np.append(self.total_history,history.unsqueeze(0).detach().numpy(),axis=0)
+                self.total_history = np.append(
+                    self.total_history, history.unsqueeze(0).detach().numpy(), axis=0
+                )
 
-            np.save('local_minima_analysis.npz',self.total_history)
+            np.save("local_minima_analysis.npz", self.total_history)
 
     def _model_test(self, model: nn.Module, idx: int) -> None:
         """This routine is a test for the pytorch model (remember the problem of the different outcomes for the same input data)
@@ -232,10 +232,10 @@ class GradientDescentDiagnostic:
             z, _ = model.Encoder(x_init.unsqueeze(1).to(device=self.device))
             z = z.squeeze(1).detach()
 
-            #provisional for low vb
-            if self.n_instances==106:
-                z=pt.randn((self.n_ensambles,self.latent_dimension))
-            
+            # provisional for low vb
+            if self.n_instances == 106:
+                z = pt.randn((self.n_ensambles, self.latent_dimension))
+
             # initialize in double and device
             z = z.to(dtype=pt.double)
             z = z.to(device=self.device)
@@ -279,7 +279,7 @@ class GradientDescentDiagnostic:
         history = pt.tensor([], device=self.device)
         # exact_history = np.array([])
         eng_old = pt.tensor(0, device=self.device)
-        n_old=np.zeros(256)
+        n_old = np.zeros(256)
 
         # refresh the lr every time
         if self.early_stopping:
@@ -289,7 +289,7 @@ class GradientDescentDiagnostic:
 
         # start the gradient descent
         tqdm_bar = tqdm(range(self.epochs))
-        z_old=np.zeros(latent_dimension)
+        z_old = np.zeros(latent_dimension)
         for epoch in tqdm_bar:
 
             if self.mu != None:
@@ -305,14 +305,11 @@ class GradientDescentDiagnostic:
             if self.variable_lr:
                 self.lr = self.lr * self.ratio  # ONLY WITH FIXED EPOCHS
 
-            
             if epoch == 0:
                 history = eng.detach().view(1, eng.shape[0])
             elif epoch % 100 == 0:
                 history = pt.cat((history, eng.detach().view(1, eng.shape[0])), dim=0)
 
-
-            
             eng_old = eng.detach()
 
             # if epoch % 1000 == 0:
@@ -328,46 +325,43 @@ class GradientDescentDiagnostic:
             #         plt.plot(history[:,i].detach().numpy())
             #     plt.show()
 
-            
             idxmin = pt.argmin(eng)
 
-            
-            z_t=z.detach().numpy()[idxmin]
+            z_t = z.detach().numpy()[idxmin]
 
-            id_maxvar_component=np.argmax(np.abs(z_t))
-            if epoch==0:
-                self.history_z=z_t.reshape(1,-1)
+            id_maxvar_component = np.argmax(np.abs(z_t))
+            if epoch == 0:
+                self.history_z = z_t.reshape(1, -1)
             else:
-                self.history_z=np.append(self.history_z,z_t.reshape(1,-1),axis=0)
+                self.history_z = np.append(self.history_z, z_t.reshape(1, -1), axis=0)
 
             self.history_id_max_component.append(id_maxvar_component)
 
+            dn_t = self.dx * np.sum(np.abs(n_z[idx] - n_old))
+            if dn_t < self.eps_value * (self.lr):
+                self.lr = 0
 
-            dn_t=self.dx*np.sum(np.abs(n_z[idx]-n_old))
-            if dn_t<self.eps_value*(self.lr):
-                self.lr=0
+            n_old = n_z[idxmin]
 
-            n_old=n_z[idxmin]
-
-            
-            f_ml=eng[idxmin].item()-self.dx*np.sum(self.v_target[idx]*n_z[idxmin])
+            f_ml = eng[idxmin].item() - self.dx * np.sum(
+                self.v_target[idx] * n_z[idxmin]
+            )
             tqdm_bar.set_description(
-                f"de={(eng[idxmin]).item()-self.e_target[idx]:.5f}, df={(f_ml-self.f_target[idx]):.5f},dn_t={dn_t:.8f} |z|={pt.linalg.norm(z[idxmin]).item():.4f} idx_maxvarz={id_maxvar_component}"
+                f"e={(eng[idxmin]).item()} f={f_ml} de={(eng[idxmin]).item()-self.e_target[idx]:.5f}, df={(f_ml-self.f_target[idx]):.5f},dn_t={dn_t:.8f} |z|={pt.linalg.norm(z[idxmin]).item():.4f} idx_maxvarz={id_maxvar_component}"
             )
             tqdm_bar.refresh()
 
-            if epoch % 5000==0:
+            if epoch % 500 == 0:
                 plt.plot(n_z[idxmin])
                 plt.plot(self.n_target[idx])
-                plt.show()    
+                plt.show()
 
-            dn=self.dx*np.sum(np.abs(n_z[idxmin]-self.n_target[idx]))
+            dn = self.dx * np.sum(np.abs(n_z[idxmin] - self.n_target[idx]))
             self.history_density.append(dn)
-            self.history_energy.append(eng[idxmin].item()-self.e_target[idx])
-            self.history_f.append(-1*self.f_target[idx]+f_ml)
+            self.history_energy.append(eng[idxmin].item() - self.e_target[idx])
+            self.history_f.append(-1 * self.f_target[idx] + f_ml)
             self.history_z_module.append(pt.linalg.norm(z[idxmin]).item())
 
-    
         return history
 
     def _step_soft(self, energy: nn.Module, z: pt.Tensor) -> tuple:
@@ -382,7 +376,7 @@ class GradientDescentDiagnostic:
         """
 
         # provisional change
-        eng, _,_, n = energy(z)
+        eng, _, _, n = energy(z)
         eng.backward(pt.ones_like(eng))
 
         with pt.no_grad():
@@ -543,31 +537,35 @@ class GradientDescentDiagnostic:
                 z=self.min_z[epoch],
             )
 
-#%%
 
-idx_instance=1
-n_instances=1
-loglr=-1
-cut=128
-logdiffsoglia=-1
-n_ensambles=1
-target_path='data/dataset_meyer/dataset_meyer_test_256_100.npz'
-#target_path='data/final_dataset/data_test.npz'
-model_name='meyer_case/cnn_softplus_for_gaussian_test_1_60_hc_13_ks_2_ps_16_ls_0.001_vb'
-#model_name='speckle_case/normMSE_60_hc_13_ks_2_ps_16_ls_1e-06_vb'
-epochs=25000
-variable_lr=False
-final_lr=0
-early_stopping=False
-L=1
-resolution=256
-latent_dimension=16
-seed=42
-num_threads=10
-device='cpu'
-mu=0
-init_path='data/dataset_meyer/dataset_meyer_test_256_15k_a_1-10_b_04-06_c_003-01.npz'
-#init_path='data/final_dataset/data_train.npz'
+#%%
+# important instances == 12,
+idx_instance = 1
+n_instances = 1
+loglr = -1
+cut = 128
+logdiffsoglia = -2
+n_ensambles = 1
+target_path = "data/dataset_meyer/dataset_meyer_test_256_100.npz"
+# target_path='data/final_dataset/data_test.npz'
+model_name = (
+    "meyer_case/cnn_softplus_for_gaussian_231222_60_hc_13_ks_2_ps_16_ls_0.001_vb"
+)
+# model_name = "meyer_case/cnn_softplus_for_gaussian_test_5_60_hc_13_ks_2_ps_5_ls_0.1_vb"
+# model_name='speckle_case/normMSE_60_hc_13_ks_2_ps_16_ls_1e-06_vb'
+epochs = 20000
+variable_lr = False
+final_lr = 10
+early_stopping = False
+L = 1
+resolution = 256
+latent_dimension = 16
+seed = 42
+num_threads = 10
+device = "cpu"
+mu = 0
+init_path = "data/dataset_meyer/dataset_meyer_test_256_15k_a_1-10_b_04-06_c_003-01.npz"
+# init_path='data/final_dataset/data_train.npz'
 
 
 gd = GradientDescentDiagnostic(
@@ -591,34 +589,184 @@ gd = GradientDescentDiagnostic(
     device=device,
     mu=mu,
     init_path=init_path,
-    eps_value=10**-6,
+    eps_value=10 ** -15,
 )
 
 #%%
 
-history=gd.run()
+history = gd.run()
 # %%
-start=1000
-stop=-1
-plt.plot(gd.history_energy[start:stop],label='e')
-plt.plot((gd.history_f[start:stop]),label='f')
-#plt.loglog()
-#plt.plot(gd.history_density[start:stop],label='n')
-plt.axhline(0.0,color='red')
+start = 1000
+stop = -1
+plt.plot(gd.history_energy[start:stop], label="e")
+plt.plot((gd.history_f[start:stop]), label="f")
+# plt.loglog()
+# plt.plot(gd.history_density[start:stop],label='n')
+plt.axhline(0.0, color="red")
 plt.legend(fontsize=20)
 plt.show()
 
 # %%
-plt.plot(gd.history_z_module[start:stop],label='f')
+plt.plot(gd.history_z_module[start:stop], label="f")
 plt.legend(fontsize=20)
 plt.show()
 # %% component variation of z
-history_z=np.asarray(gd.history_z)
+history_z = np.asarray(gd.history_z)
 print(history_z.shape)
 for i in range(latent_dimension):
-    plt.plot(history_z[:,i],label=f'idx_z={i}')
-    #plt.loglog()
-    #plt.legend(fontsize=20)
+    plt.plot(history_z[:, i], label=f"idx_z={i}")
+    # plt.loglog()
+    # plt.legend(fontsize=20)
+plt.show()
+
+
+# %% Let's try to import weights from a model to another
+# Landscape creation
+box_inf_0 = -3
+box_sup_0 = 3
+box_inf_1 = -3
+box_sup_1 = 3
+res = 128
+dx = 1 / 256
+
+z_0 = pt.linspace(box_inf_0, box_sup_0, res)
+z_1 = pt.linspace(box_inf_1, box_sup_1, res)
+model = pt.load("model_dft_pytorch/" + model_name, map_location="cpu")
+model.eval()
+
+x = pt.tensor(gd.n_target[idx_instance].reshape(1, 1, -1), dtype=pt.double)
+
+z_exact = model.Encoder(x)[0]
+x_recon = model.Decoder(z_exact).detach().numpy().reshape(-1)
+
+z_exact = z_exact[0].detach().numpy()
+print(z_exact.shape)
+
+plt.plot(gd.n_target[idx_instance])
+plt.plot(x_recon)
+plt.show()
+
+v = np.load(target_path)["potential"]
+v = pt.tensor(v, dtype=pt.double)
+
+energy = Energy(model, v[idx_instance], dx, mu=0)
+
+z = pt.zeros((res, res, 2), dtype=pt.double)
+for i in trange(res):
+    for j in range(res):
+        z[i, j, 0] = z_0[i]
+        z[i, j, 1] = z_1[j]
+
+z = z.view(-1, 2)
+batch = res
+nbatch = int(z.shape[0] / batch)
+
+for i in trange(nbatch):
+    if i == 0:
+        eng_imshow = energy(z[i * batch : (i + 1) * batch])[0].detach().numpy()
+    else:
+        eng_imshow = np.append(
+            eng_imshow,
+            energy(z[i * batch : (i + 1) * batch])[0].detach().numpy(),
+            axis=0,
+        )
+
+eng_imshow = eng_imshow.reshape(res, res)
+
+
+#%% plot the surface
+import matplotlib.pyplot as plt
+from matplotlib import cm
+from matplotlib.ticker import LinearLocator
+
+fig, ax = plt.subplots(figsize=(20, 20))
+
+
+x, y = np.meshgrid(z_0, z_1)
+
+print(gd.history_z.shape)
+print(gd.history_z[0:10])
+surf = ax.contour(
+    x, y, eng_imshow, 200, cmap=cm.coolwarm, linewidth=0, antialiased=False
+)
+
+fig.colorbar(surf, shrink=3, aspect=2)
+plt.tick_params(
+    top=True,
+    right=True,
+    labeltop=False,
+    labelright=False,
+    direction="in",
+    labelsize=30,
+    width=5,
+)
+ax.scatter(gd.history_z[-1, 0], gd.history_z[-1, 1], color="blue", marker="*", s=5000)
+ax.scatter(gd.history_z[:, 0], gd.history_z[:, 1], color="red", marker="o", s=100)
+plt.scatter(z_exact[0], z_exact[1], marker="*", s=5000, color="green")
+plt.show()
+
+
+# %%
+fig, ax = plt.subplots(figsize=(20, 20), subplot_kw={"projection": "3d"})
+surf = ax.plot_surface(
+    x, y, eng_imshow, cmap=cm.coolwarm, linewidth=0, antialiased=False
+)
+ax.view_init(elev=20.0, azim=200)
+plt.show()
+# %%
+# latent space 1d
+
+# %% Let's try to import weights from a model to another
+# Landscape creation
+a = -40
+b = 40
+res = 5000
+dx = 1 / 256
+
+z_0 = pt.linspace(a, b, res)
+model = pt.load("model_dft_pytorch/" + model_name, map_location="cpu")
+model.eval()
+
+x = pt.tensor(gd.n_target[idx_instance].reshape(1, 1, -1), dtype=pt.double)
+
+z_exact = model.Encoder(x)[0]
+x_recon = model.Decoder(z_exact).detach().numpy().reshape(-1)
+
+z_exact = z_exact[0].detach().numpy()
+print(z_exact.shape)
+
+plt.plot(gd.n_target[idx_instance])
+plt.plot(x_recon)
+plt.show()
+
+v = np.load(target_path)["potential"]
+v = pt.tensor(v, dtype=pt.double)
+
+energy = Energy(model, v[idx_instance], dx, mu=0)
+
+z = z_0.double()
+z = z.view(-1, 1)
+batch = res
+nbatch = int(z.shape[0] / batch)
+
+for i in trange(nbatch):
+    if i == 0:
+        eng = energy(z[i * batch : (i + 1) * batch])[0].detach().numpy()
+    else:
+        eng = np.append(
+            eng_imshow,
+            energy(z[i * batch : (i + 1) * batch])[0].detach().numpy(),
+            axis=0,
+        )
+
+eng = eng.reshape(res)
+
+# %%
+plt.plot(z, eng)
+plt.axvline(z_exact, linewidth=2, linestyle="--", color="red")
+plt.axvline(gd.history_z[-1], label="stop", color="black")
+plt.axvline(gd.history_z[0], label="start", color="green")
+
 plt.show()
 
 # %%

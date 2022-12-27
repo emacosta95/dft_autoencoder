@@ -95,6 +95,7 @@ class GradientDescent:
         self.n_target = np.load(target_path)["density"]
         self.v_target = np.load(target_path)["potential"]
         self.e_target = np.load(target_path)["energy"]
+        self.f_target=np.load(target_path)["F"]
         self.init_path = init_path
 
         self.model_name = model_name
@@ -267,6 +268,7 @@ class GradientDescent:
 
         # start the gradient descent
         tqdm_bar = tqdm(range(self.epochs))
+        n_old=200
         for epoch in tqdm_bar:
 
             if self.mu != None:
@@ -281,6 +283,17 @@ class GradientDescent:
 
             if self.variable_lr:
                 self.lr = self.lr * self.ratio  # ONLY WITH FIXED EPOCHS
+
+
+            # Meyer's Early stopping
+            dn=np.sum(np.abs(n_z[0]-n_old))*self.dx
+
+            n_old=n_z[0]
+
+            if dn < self.lr*10**-6:
+                #stop
+                self.lr=0
+
 
             if epoch == 0:
                 history = eng.detach().view(1, eng.shape[0])
@@ -299,9 +312,11 @@ class GradientDescent:
                     z=z,
                 )
 
+
             idxmin = pt.argmin(eng)
+            f_ml=eng[idxmin].item()-self.dx*np.sum(self.v_target[idx]*n_z[idxmin])
             tqdm_bar.set_description(
-                f"eng={(eng[idxmin]).item()-self.e_target[idx]:.5f},norm={np.sum(n_z[idxmin],axis=0)*self.dx:.3f}"
+                f"df={f_ml-self.f_target[idx]:.5f} eng={(eng[idxmin]).item()-self.e_target[idx]:.5f},norm={np.sum(n_z[idxmin],axis=0)*self.dx:.3f}, dn={dn:.7f}"
             )
             tqdm_bar.refresh()
 
