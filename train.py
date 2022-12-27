@@ -18,6 +18,7 @@ from src.training.train_module import fit
 import torch.nn as nn
 import argparse
 import os
+import importlib
 
 
 # parser arguments
@@ -330,47 +331,46 @@ def main(args):
         history_valid = []
         history_train = []
 
-        if args.ModelType == "DFTVAEnorm":
+        module = importlib.import_module("src.model_dft_autoencoder")
+        model_class = getattr(module, args.ModelType)
+        model = model_class(
+            input_size=input_size,
+            latent_dimension=args.latent_dimension,
+            loss_generative=loss_func,
+            loss_dft=nn.MSELoss(),
+            input_channels=input_channel,
+            hidden_channels=hc,
+            kernel_size=kernel_size,
+            kernel_size_dft=args.kernel_size_dft,
+            padding=padding,
+            padding_mode=padding_mode,
+            pooling_size=pooling_size,
+            output_size=output_size,
+            activation="Softplus",
+            # only provisional
+            dx=args.l / args.input_size,
+        )
 
-            model = DFTVAEnorm(
-                input_size=input_size,
-                latent_dimension=args.latent_dimension,
-                loss_generative=loss_func,
-                loss_dft=nn.MSELoss(),
-                input_channels=input_channel,
-                hidden_channels=hc,
-                kernel_size=kernel_size,
-                kernel_size_dft=args.kernel_size_dft,
-                padding=padding,
-                padding_mode=padding_mode,
-                pooling_size=pooling_size,
-                output_size=output_size,
-                activation=nn.Softplus(),
-                # only provisional
-                dx=args.l / args.input_size,
-            )
+        # if args.ModelType == "DFTVAEnorm":
 
-        if args.ModelType == "DFTVAEnormHeavy":
+        #     model = DFTVAEnorm(
+        #         input_size=input_size,
+        #         latent_dimension=args.latent_dimension,
+        #         loss_generative=loss_func,
+        #         loss_dft=nn.MSELoss(),
+        #         input_channels=input_channel,
+        #         hidden_channels=hc,
+        #         kernel_size=kernel_size,
+        #         kernel_size_dft=args.kernel_size_dft,
+        #         padding=padding,
+        #         padding_mode=padding_mode,
+        #         pooling_size=pooling_size,
+        #         output_size=output_size,
+        #         activation=nn.Softplus(),
+        #         # only provisional
+        #         dx=args.l / args.input_size,
+        #     )
 
-            model = DFTVAEnormHeavy(
-                input_size=input_size,
-                latent_dimension=args.latent_dimension,
-                loss_generative=loss_func,
-                loss_dft=nn.MSELoss(),
-                input_channels=input_channel,
-                hidden_channels=hc,
-                kernel_size=kernel_size,
-                padding=padding,
-                padding_mode=padding_mode,
-                pooling_size=pooling_size,
-                output_size=output_size,
-                pooling_size_dft=args.pooling_size_dft,
-                kernel_size_dft=args.kernel_size_dft,
-                hidden_channels_dft=args.hidden_channels_dft,
-                padding_dft=args.padding_dft,
-                # activation=nn.Softplus(),
-                dx=args.l / args.input_size,
-            )
     model = model.to(pt.double)
     model = model.to(device=device)
 

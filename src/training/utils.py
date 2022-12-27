@@ -34,9 +34,6 @@ def make_data_loader(
     # v = data["potential"]
     f = data["F"]
 
-    # func = eng - (14 / 256) * np.sum(v * n, axis=1)
-    if img is True:
-        n = n.reshape(n.shape[0], 1, n.shape[1])
     n_train = int(n.shape[0] * split)
 
     if generative:

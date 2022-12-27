@@ -17,10 +17,12 @@ class Encode(nn.Module):
         padding_mode: str,
         kernel_size: int,
         pooling_size: int,
-        activation: nn.Module,
+        activation: str,
     ):
 
         super().__init__()
+
+        activation = getattr(torch.nn, activation)()
 
         self.block_1 = nn.Sequential(
             # nn.BatchNorm1d(input_channels),
@@ -102,10 +104,12 @@ class Encode3d(nn.Module):
         padding_mode: str,
         kernel_size: int,
         pooling_size: int,
-        activation: nn.Module,
+        activation: str,
     ):
 
         super().__init__()
+
+        activation = getattr(torch.nn, activation)()
 
         self.block_1 = nn.Sequential(
             # nn.BatchNorm1d(input_channels),
@@ -176,7 +180,7 @@ class Encode3d(nn.Module):
         return x_mu, x_logstd
 
 
-class DecodeNorm(nn.Module):
+class DecodeNorm3d(nn.Module):
     def __init__(
         self,
         latent_dimension: int,
@@ -187,7 +191,7 @@ class DecodeNorm(nn.Module):
         padding_mode: str,
         kernel_size: int,
         pooling_size: int,
-        activation: nn.Module,
+        activation: str,
         dx: float,
     ):
         super().__init__()
@@ -195,6 +199,8 @@ class DecodeNorm(nn.Module):
         self.output_size = output_size
         self.pooling_size = pooling_size
         self.dx = dx
+
+        activation = getattr(torch.nn, activation)()
 
         self.recon_block = nn.Sequential(
             nn.Linear(
@@ -243,6 +249,83 @@ class DecodeNorm(nn.Module):
             int(self.output_size / (self.pooling_size ** 3)),
             int(self.output_size / (self.pooling_size ** 3)),
             int(self.output_size / (self.pooling_size ** 3)),
+        )
+        z = self.block_conv1(z)
+        z = self.block_conv2(z)
+        z = self.block_conv3(z)
+        z = torch.sigmoid(z)
+        # normalization
+        # condition
+        norm = torch.sum(z, dim=2) * self.dx
+        z = z / norm[:, :, None]
+        return z
+
+
+class DecodeNorm(nn.Module):
+    def __init__(
+        self,
+        latent_dimension: int,
+        hidden_channels: int,
+        output_channels: int,
+        output_size: int,
+        padding: int,
+        padding_mode: str,
+        kernel_size: int,
+        pooling_size: int,
+        activation: str,
+        dx: float,
+    ):
+        super().__init__()
+
+        activation = getattr(torch.nn, activation)()
+
+        self.output_size = output_size
+        self.pooling_size = pooling_size
+        self.dx = dx
+
+        self.recon_block = nn.Sequential(
+            nn.Linear(
+                latent_dimension,
+                int(output_size / (pooling_size) ** 3) * hidden_channels,
+            ),
+        )
+        self.block_conv1 = nn.Sequential(
+            nn.ConvTranspose1d(
+                in_channels=hidden_channels,
+                out_channels=hidden_channels,
+                kernel_size=kernel_size + 1,
+                stride=2,
+                padding=padding,
+            ),
+            activation,
+            nn.BatchNorm1d(hidden_channels),
+        )
+        self.block_conv2 = nn.Sequential(
+            nn.ConvTranspose1d(
+                in_channels=hidden_channels,
+                out_channels=hidden_channels,
+                kernel_size=kernel_size + 1,
+                stride=2,
+                padding=padding,
+            ),
+            activation,
+            nn.BatchNorm1d(hidden_channels),
+        )
+        self.block_conv3 = nn.Sequential(
+            nn.ConvTranspose1d(
+                in_channels=hidden_channels,
+                out_channels=output_channels,
+                kernel_size=kernel_size + 1,
+                stride=2,
+                padding=padding,
+            ),
+        )
+        self.hidden_channel = hidden_channels
+
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
+        z = self.recon_block(z)
+        z = z.view(
+            -1, self.hidden_channel, int(self.output_size / (self.pooling_size ** 3))
         )
         z = self.block_conv1(z)
         z = self.block_conv2(z)

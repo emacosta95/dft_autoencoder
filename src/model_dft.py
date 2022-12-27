@@ -88,10 +88,12 @@ class Pilati_model_3d_3_layer(nn.Module):
         padding: int,
         padding_mode: str,
         pooling_size: int,
-        activation: torch.nn.Module,
+        activation: str,
     ):
 
         super().__init__()
+
+        activation = getattr(torch.nn, activation)()
 
         self.model_1 = nn.Sequential(
             nn.Conv3d(
@@ -102,7 +104,7 @@ class Pilati_model_3d_3_layer(nn.Module):
                 padding=padding,
                 padding_mode=padding_mode,
             ),
-            nn.Softplus(),
+            activation,
             nn.AvgPool3d(kernel_size=pooling_size),
         )
 
@@ -115,7 +117,7 @@ class Pilati_model_3d_3_layer(nn.Module):
                 padding=padding,
                 padding_mode=padding_mode,
             ),
-            nn.Softplus(),
+            activation,
             nn.AvgPool3d(kernel_size=pooling_size),
         )
 
@@ -128,7 +130,7 @@ class Pilati_model_3d_3_layer(nn.Module):
                 padding=padding,
                 padding_mode=padding_mode,
             ),
-            nn.Softplus(),
+            activation,
             nn.AvgPool3d(kernel_size=pooling_size),
         )
 
