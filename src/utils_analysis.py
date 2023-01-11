@@ -63,9 +63,7 @@ def dataloader(
     elif type == "energy":
 
         data = np.load(
-            "data/gradient_descent_data/"
-            + session_name
-            + "_energy.npz",
+            "data/gradient_descent_data/" + session_name + "_energy.npz",
             allow_pickle=True,
         )
 
@@ -86,48 +84,63 @@ def dataloader(
 
         return history, history_n
 
-def test_models_dft(model_name, data_path: str,text:str):
-        r2 = R2Score()
-        n_std = np.load(data_path)["density"]
-        F_std = np.load(data_path)["F"]
-        ds = TensorDataset(pt.tensor(n_std).view(-1, n_std.shape[-1]), pt.tensor(F_std))
-        dl = DataLoader(ds, batch_size=100)
-        model = pt.load(
-            "model_dft_pytorch/" + model_name, map_location="cpu"
+
+def test_models_dft(model_name, data_path: str, text: str, d3: bool, bs: int):
+    r_square = None
+    r2 = R2Score()
+    n_std = np.load(data_path)["density"][0:1000]
+    F_std = np.load(data_path)["F"][0:1000]
+    # ds = TensorDataset(pt.tensor(n_std).view(-1, n_std.shape[-1]), pt.tensor(F_std))
+    if d3:
+        ds = TensorDataset(
+            pt.tensor(n_std).view(
+                -1, 1, n_std.shape[1], n_std.shape[2], n_std.shape[3]
+            ),
+            pt.tensor(F_std),
         )
+    dl = DataLoader(ds, batch_size=bs)
+    model = pt.load("model_dft_pytorch/" + model_name, map_location="cpu")
+    model.eval()
+    model = model.to(dtype=pt.double)
+
+    mae_ave = 0
+    for batch in dl:
         model.eval()
-        model = model.to(dtype=pt.double)
-
-        mae_ave=0
-        for batch in dl:
-            model.eval()
+        if not (d3):
             model.r2_computation(batch, device="cpu", r2=r2)
-            model.to(device='cpu')
-            x,f=batch
-            f_ml=model.functional(x).view(-1)
-            mae=pt.mean(pt.abs(f-f_ml)).item()
-            mae_ave+=mae
+        model.to(device="cpu")
+        x, f = batch
+        f_ml = model.functional(x).view(-1)
+        mae = pt.mean(pt.abs(f - f_ml)).item()
+        mae_ave += mae
 
-        print(model)
-        print(f"# parameters={count_parameters(model)}")
+    print(model)
+    print(f"# parameters={count_parameters(model)}")
+    if not (d3):
         print(f"R_square_test={r2.compute()} for {text} \n")
-
-        r_square=r2.compute()
+        r_square = r2.compute()
         r2.reset()
 
-        return r_square,mae_ave/len(dl)
+    return r_square, mae_ave / len(dl)
 
-def test_models_vae(model_name, data_path: str, batch_size: int, plot: bool,text:str
+
+def test_models_vae(
+    model_name, data_path: str, batch_size: int, plot: bool, text: str, d3: bool
 ):
 
     n_std = np.load(data_path)["density"]
     F_std = np.load(data_path)["F"]
-    ds = TensorDataset(pt.tensor(n_std).view(-1, 1, n_std.shape[-1]))
+
+    if d3:
+        ds = TensorDataset(
+            pt.tensor(n_std).view(-1, 1, n_std.shape[1], n_std.shape[2], n_std.shape[3])
+        )
+    else:
+        ds = TensorDataset(pt.tensor(n_std).view(-1, 1, n_std.shape[-1]))
+
     dl = DataLoader(ds, batch_size=batch_size)
 
-    model = pt.load(
-        "model_dft_pytorch/" + model_name, map_location="cpu"
-    )
+    model = pt.load("model_dft_pytorch/" + model_name, map_location="cpu")
     model.eval()
     model = model.to(dtype=pt.double)
     Dn = 0
@@ -139,25 +152,29 @@ def test_models_vae(model_name, data_path: str, batch_size: int, plot: bool,text
         n_recon = n_recon.squeeze().detach().numpy()
         print(n_recon.shape)
         print(batch[0].shape)
-        if plot:
-            plt.plot(
-                batch[0][0].detach().squeeze().numpy(), label="original"
-            )
-            plt.plot(n_recon[0], label="reconstruction")
-            plt.legend(fontsize=20)
-            plt.show()
+        if not (d3):
+            if plot:
+                plt.plot(batch[0][0].detach().squeeze().numpy(), label="original")
+                plt.plot(n_recon[0], label="reconstruction")
+                plt.legend(fontsize=20)
+                plt.show()
         dn = np.sqrt(
-            np.sum(
-                (n_recon - batch[0].detach().squeeze().numpy()) ** 2, axis=1
+            np.sum((n_recon - batch[0].detach().squeeze().numpy()) ** 2, axis=1)
+        ) / np.sqrt(np.sum((batch[0].detach().squeeze().numpy()) ** 2, axis=1))
+        if d3:
+            dn = np.sqrt(
+                np.sum(
+                    (n_recon - batch[0].detach().squeeze().numpy()) ** 2, axis=(1, 2, 3)
+                )
+            ) / np.sqrt(
+                np.sum((batch[0].detach().squeeze().numpy()) ** 2, axis=(1, 2, 3))
             )
-        ) / np.sqrt(
-            np.sum((batch[0].detach().squeeze().numpy()) ** 2, axis=1)
-        )
+
         Dn += np.average(dn)
 
         print(model)
         print(f"# parameters={count_parameters(model)}")
         print(f"Dn={Dn/len(dl)} for {text} \n")
-        accuracy_vae=(Dn / len(dl))
+        accuracy_vae = Dn / len(dl)
 
         return accuracy_vae

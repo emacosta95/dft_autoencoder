@@ -190,6 +190,13 @@ model_parser.add_argument(
 )
 
 model_parser.add_argument(
+    "--activation",
+    type=str,
+    help="activation function (default='Softplus')",
+    default="Softplus",
+)
+
+model_parser.add_argument(
     "--model_name",
     type=str,
     help="name of the model (default='cnn_for_gaussian')",
@@ -346,7 +353,7 @@ def main(args):
             padding_mode=padding_mode,
             pooling_size=pooling_size,
             output_size=output_size,
-            activation="Softplus",
+            activation=args.activation,
             # only provisional
             dx=args.l / args.input_size,
         )

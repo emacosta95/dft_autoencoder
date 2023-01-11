@@ -20,7 +20,7 @@ ls = 16
 vb = "0.001"
 n_test = 2
 model_name = (
-    f"meyer_case/cnn_softplus_for_gaussian_231222_60_hc_13_ks_2_ps_{ls}_ls_{vb}_vb"
+    f"3d_speckle/cnn_softplus_for_3dspeckle_050123_60_hc_5_ks_2_ps_16_ls_0.001_vb"
 )
 # model_name = "meyer_case/cnn_for_gaussian_60_hc_13_ks_2_ps_16_ls_1e-06_vb"
 # model_name=f"meyer_case/cnn_for_gaussian_test_5_60_hc_13_ks_2_ps_16_ls_0.1_vb"
@@ -33,7 +33,7 @@ variable_lr = False
 early_stopping = False
 lr = 1
 
-data_path_test = "data/dataset_meyer/dataset_meyer_test_256_100.npz"
+data_path_test = "data/dataset_speckle_3d/test.npz"
 f = np.load(data_path_test)["F"]
 # test the models
 dn = test_models_vae(
@@ -42,8 +42,11 @@ dn = test_models_vae(
     batch_size=10,
     plot=True,
     text="test",
+    d3=True,
 )
-r2, mae = test_models_dft(model_name=model_name, data_path=data_path_test, text="test")
+r2, mae = test_models_dft(
+    model_name=model_name, data_path=data_path_test, text="test", d3=True, bs=10
+)
 
 print(dn)
 print(r2, mae * 627)
@@ -114,3 +117,28 @@ print(np.average(np.abs(e_min - e_gs) * 627))
 plt.plot(n_min[4] - n_gs[4])
 # plt.plot(n_gs[4])
 plt.show()
+
+
+#%%
+import numpy as np
+import matplotlib.pyplot as plt
+
+data = np.load("data/dataset_speckle_3d/test.npz")
+
+f = data["F"]
+n = data["density"]
+v = data["potential"]
+e = data["energy"]
+
+#%%
+# print(f[0], e[0])
+
+# f_new = e - np.einsum("axyz,axyz->a", v, n) * (2 / 18) ** 3
+
+# print(f_new[0])
+# # %%
+# np.savez("data/dataset_speckle_3d/train.npz", density=n, potential=v, energy=e, F=f_new)
+# %%
+plt.hist(f, bins=100)
+plt.show()
+# %%

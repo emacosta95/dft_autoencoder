@@ -189,7 +189,7 @@ class DFTVAEnorm3D(nn.Module):
         return x
 
     def functional(self, x: torch.Tensor):
-        x = x.unsqueeze(1)
+        # x = x.unsqueeze(1)
         return self.DFTModel(x)
 
     def _latent_sample(self, mu, logvar):

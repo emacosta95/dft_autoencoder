@@ -217,7 +217,7 @@ class DecodeNorm3d(nn.Module):
                 padding=padding,
             ),
             activation,
-            nn.BatchNorm1d(hidden_channels),
+            nn.BatchNorm3d(hidden_channels),
         )
         self.block_conv2 = nn.Sequential(
             nn.ConvTranspose3d(
@@ -228,13 +228,13 @@ class DecodeNorm3d(nn.Module):
                 padding=padding,
             ),
             activation,
-            nn.BatchNorm1d(hidden_channels),
+            nn.BatchNorm3d(hidden_channels),
         )
         self.block_conv3 = nn.Sequential(
             nn.ConvTranspose3d(
                 in_channels=hidden_channels,
                 out_channels=output_channels,
-                kernel_size=kernel_size + 1,
+                kernel_size=kernel_size + 3,
                 stride=2,
                 padding=padding,
             ),
@@ -335,6 +335,7 @@ class DecodeNorm(nn.Module):
         # condition
         norm = torch.sum(z, dim=2) * self.dx
         z = z / norm[:, :, None]
+
         return z
 
 
