@@ -17,11 +17,8 @@ from src.utils_analysis import dataloader, test_models_dft, test_models_vae
 #%% Meyer study
 
 ls = 16
-vb = "0.001"
 n_test = 2
-model_name = (
-    f"3d_speckle/cnn_softplus_for_3dspeckle_050123_60_hc_5_ks_2_ps_16_ls_0.001_vb"
-)
+model_name = f"3d_speckle/cnn_relu_for_3dspeckle_180123_60_hc_5_ks_2_ps_16_ls_1e-05_vb"
 # model_name = "meyer_case/cnn_for_gaussian_60_hc_13_ks_2_ps_16_ls_1e-06_vb"
 # model_name=f"meyer_case/cnn_for_gaussian_test_5_60_hc_13_ks_2_ps_16_ls_0.1_vb"
 # model_name=f"meyer_case/cnn_for_gaussian_test_4_60_hc_13_ks_2_ps_16_ls_0.01_vb"
@@ -35,8 +32,17 @@ lr = 1
 
 data_path_test = "data/dataset_speckle_3d/test.npz"
 f = np.load(data_path_test)["F"]
+e = np.load(data_path_test)["energy"]
+
+
+plt.hist(f, bins=200)
+plt.show()
+
+plt.hist(e, bins=200)
+plt.show()
+#%%
 # test the models
-dn = test_models_vae(
+dn, n_std, n_recons = test_models_vae(
     model_name=model_name,
     data_path=data_path_test,
     batch_size=10,
@@ -75,6 +81,28 @@ e_min, e_gs = dataloader(
     variable_lr=variable_lr,
     n_ensambles=n_ensambles,
 )
+
+#%%
+n_recons = n_recons.reshape(10, 18, 18, 18)
+print(n_std.shape)
+
+#%%
+for i in range(n_recons.shape[1]):
+    plt.imshow(n_recons[0, i] - n_std[0, i])
+    plt.colorbar()
+    plt.show()
+
+for i in range(n_recons.shape[1]):
+    plt.imshow(n_recons[0, i])
+    plt.colorbar()
+    plt.show()
+    plt.imshow(n_std[0, i])
+    plt.colorbar()
+    plt.show()
+
+
+#%%
+print(np.sum(n_recons[0]) * (1.5 / 18) ** 3)
 
 
 #%%

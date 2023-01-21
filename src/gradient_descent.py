@@ -64,6 +64,7 @@ class GradientDescent:
         device: str,
         mu: float,
         init_path: str,
+        Energy: nn.Module,
     ):
 
         self.device = device
@@ -78,6 +79,8 @@ class GradientDescent:
         self.dx = L / resolution
         self.latent_dimension = latent_dimension
         self.mu = mu
+
+        self.Energy = Energy
 
         self.n_instances = n_instances
 
@@ -95,7 +98,7 @@ class GradientDescent:
         self.n_target = np.load(target_path)["density"]
         self.v_target = np.load(target_path)["potential"]
         self.e_target = np.load(target_path)["energy"]
-        self.f_target=np.load(target_path)["F"]
+        self.f_target = np.load(target_path)["F"]
         self.init_path = init_path
 
         self.model_name = model_name
@@ -168,9 +171,10 @@ class GradientDescent:
         e_ref = self.e_target[idx]
 
         n_ref = self.n_target[idx]
-        n_ref = n_ref.reshape(1, 256)
 
-        energy = Energy(model, pt.tensor(pot, device=self.device), self.dx, self.mu)
+        energy = self.Energy(
+            model, pt.tensor(pot, device=self.device), self.dx, self.mu
+        )
         eng = energy(pt.tensor(n_ref, device=self.device))
         self.eng_model_ref = np.append(self.eng_model_ref, eng.detach().cpu().numpy())
 
@@ -193,9 +197,9 @@ class GradientDescent:
             idx = pt.randint(0, ns.shape[0], size=(1,))
 
             if i == 0:
-                x_init = ns[idx].view(1, -1)
+                x_init = ns[idx].unsqueeze(0)
             else:
-                x_init = pt.cat((x_init, ns[idx].view(1, -1)), dim=0)
+                x_init = pt.cat((x_init, ns[idx].unsqueeze(0)), dim=0)
 
         # loading the model
         print("loading the model...")
@@ -209,13 +213,13 @@ class GradientDescent:
         while norm_check > 0.01:
             # initial configuration from pseudo
             # density profiles
-            z, _ = model.Encoder(x_init.unsqueeze(1).to(device=self.device))
+            z, _ = model.Encoder(x_init.to(device=self.device))
             z = z.squeeze(1).detach()
 
-            #provisional for low vb
-            if self.n_instances==106:
-                z=pt.randn((self.n_ensambles,self.latent_dimension))
-            
+            # provisional for low vb
+            if self.n_instances == 106:
+                z = pt.randn((self.n_ensambles, self.latent_dimension))
+
             # initialize in double and device
             z = z.to(dtype=pt.double)
             z = z.to(device=self.device)
@@ -223,7 +227,7 @@ class GradientDescent:
             z.requires_grad_(True)
 
             n_z = model.proposal(z)
-            norm = pt.abs(pt.sum(n_z, dim=1) * self.dx - 1)
+            norm = pt.abs(pt.sum(n_z, dim=(1, 2, 3)) * (self.dx) ** 3 - 1)
             norm_check = pt.max(norm)
             print(norm_check)
 
@@ -253,7 +257,7 @@ class GradientDescent:
         # initialize the single gradient descent
 
         pot = pt.tensor(self.v_target[idx], device=self.device)
-        energy = Energy(model, pot, self.dx, self.mu)
+        energy = self.Energy(model, pot, self.dx, self.mu)
         energy = energy.to(device=self.device)
 
         history = pt.tensor([], device=self.device)
@@ -268,13 +272,10 @@ class GradientDescent:
 
         # start the gradient descent
         tqdm_bar = tqdm(range(self.epochs))
-        n_old=200
+        n_old = 200
         for epoch in tqdm_bar:
 
-            if self.mu != None:
-                eng, z, n_z = self._step_soft(energy=energy, z=z)
-            else:
-                eng, z, n_z = self._step_hard(energy=energy, z=z)
+            eng, z, n_z = self._step_hard3D(energy=energy, z=z)
 
             diff_eng = pt.abs(eng.detach() - eng_old)
 
@@ -284,16 +285,15 @@ class GradientDescent:
             if self.variable_lr:
                 self.lr = self.lr * self.ratio  # ONLY WITH FIXED EPOCHS
 
-
             # Meyer's Early stopping
-            dn=np.sum(np.abs(n_z[0]-n_old))*self.dx
+            # print(n_z.shape)
+            dn = np.sum(np.abs(n_z[0] - self.n_target[idx])) * (self.dx) ** 3
 
-            n_old=n_z[0]
+            # n_old = n_z[0]
 
-            if dn < self.lr*10**-6:
-                #stop
-                self.lr=0
-
+            if dn < -10:  # self.lr * 10 ** -6:
+                # stop
+                self.lr = 0
 
             if epoch == 0:
                 history = eng.detach().view(1, eng.shape[0])
@@ -312,11 +312,13 @@ class GradientDescent:
                     z=z,
                 )
 
-
             idxmin = pt.argmin(eng)
-            f_ml=eng[idxmin].item()-self.dx*np.sum(self.v_target[idx]*n_z[idxmin])
+            f_ml = (
+                eng[idxmin].item()
+                - np.sum(self.v_target[idx] * n_z[idxmin]) * (self.dx) ** 3
+            )
             tqdm_bar.set_description(
-                f"df={f_ml-self.f_target[idx]:.5f} eng={(eng[idxmin]).item()-self.e_target[idx]:.5f},norm={np.sum(n_z[idxmin],axis=0)*self.dx:.3f}, dn={dn:.7f}"
+                f"df={f_ml-self.f_target[idx]:.5f} eng={(eng[idxmin]).item()-self.e_target[idx]:.5f},norm={np.sum(n_z[idxmin])*(self.dx)**3:.5f}, dn={dn:.7f}"
             )
             tqdm_bar.refresh()
 
@@ -332,7 +334,7 @@ class GradientDescent:
         """
 
         # provisional change
-        eng, _,_, n = energy(z)
+        eng, _, _, n = energy(z)
         eng.backward(pt.ones_like(eng))
 
         with pt.no_grad():
@@ -399,6 +401,47 @@ class GradientDescent:
                 "ai,ai->a", grad_n, grad_n
             )
             z -= self.lr * (grad_e - mu[:, None] * grad_n)
+
+        return (
+            eng.clone().detach(),
+            z,
+            n.detach().cpu().numpy(),
+        )
+
+    def _step_hard3D(self, energy: nn.Module, z: pt.Tensor) -> tuple:
+        """This routine computes the step of the gradient using both the positivity and the nomralization constrain
+        Arguments:
+        energy[nn.Module]: [the energy functional]
+        phi[pt.tensor]: [the sqrt of the density profile]
+
+        Returns:
+            eng[pt.tensor]: [the energy value computed before the step]
+            phi[pt.tensor]: [the wavefunction evaluated after the step]
+        """
+
+        eng, norm, n = energy(z)
+        # print(norm)
+        eng.backward(pt.ones_like(eng), retain_graph=True)
+
+        with pt.no_grad():
+            grad_e = z.grad.clone()
+            z.grad.zero_()
+
+        # norm.backward(pt.ones_like(norm))
+        # print(norm)
+        # print(eng.item())
+
+        with pt.no_grad():
+            grad_n = z.grad.clone()
+            z.grad.zero_()
+            # chemical potential with the low grad_e
+            # approximation
+            # logmu = pt.log(pt.einsum("ai,ai->a", grad_n, grad_e)) - pt.log(
+            #     pt.einsum("ai,ai->a", grad_n, grad_n)
+            # )
+            # print("log=", logmu.mean())
+            # z -= self.lr * (grad_e - logmu[:, None].exp() * grad_n)
+            z -= self.lr * grad_e
 
         return (
             eng.clone().detach(),
@@ -481,13 +524,12 @@ class GradientDescent:
         # save the numpy values
         if idx != 0:
             np.savez(
-                "data/gradient_descent_data/"
-                + session_name+'_energy',
+                "data/gradient_descent_data/" + session_name + "_energy",
                 min_energy=self.min_engs[epoch],
                 gs_energy=self.e_target[0 : (self.min_engs[epoch].shape[0])],
             )
             np.savez(
-                "data/gradient_descent_data/" + session_name+'_density',
+                "data/gradient_descent_data/" + session_name + "_density",
                 min_density=self.min_ns[epoch],
                 gs_density=self.n_target[0 : self.min_ns[epoch].shape[0]],
                 z=self.min_z[epoch],

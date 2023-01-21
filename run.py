@@ -3,6 +3,7 @@ import argparse
 import torch
 import numpy as np
 from src.training.utils import from_txt_to_bool
+from src.model import Energy3D
 
 
 parser = argparse.ArgumentParser()
@@ -64,7 +65,7 @@ parser.add_argument(
 
 parser.add_argument(
     "--loglr",
-    type=int,
+    type=float,
     help="The logarithm of the learning rate (default=-1)",
     default=-1,
 )
@@ -142,6 +143,7 @@ gd = GradientDescent(
     device=args.device,
     mu=args.mu,
     init_path=args.init_path,
+    Energy=Energy3D,
 )
 
 

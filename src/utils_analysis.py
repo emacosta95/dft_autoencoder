@@ -130,7 +130,7 @@ def test_models_vae(
 
     n_std = np.load(data_path)["density"]
     F_std = np.load(data_path)["F"]
-
+    n_recons = []
     if d3:
         ds = TensorDataset(
             pt.tensor(n_std).view(-1, 1, n_std.shape[1], n_std.shape[2], n_std.shape[3])
@@ -150,6 +150,7 @@ def test_models_vae(
         mu, _ = model.Encoder(batch[0].double())
         n_recon = model.Decoder(mu)
         n_recon = n_recon.squeeze().detach().numpy()
+        n_recons.append(n_recon)
         print(n_recon.shape)
         print(batch[0].shape)
         if not (d3):
@@ -177,4 +178,4 @@ def test_models_vae(
         print(f"Dn={Dn/len(dl)} for {text} \n")
         accuracy_vae = Dn / len(dl)
 
-        return accuracy_vae
+        return accuracy_vae, n_std, np.asarray(n_recons)

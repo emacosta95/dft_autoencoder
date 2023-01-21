@@ -256,9 +256,97 @@ class DecodeNorm3d(nn.Module):
         z = torch.sigmoid(z)
         # normalization
         # condition
-        norm = torch.sum(z, dim=2) * self.dx
-        z = z / norm[:, :, None]
+        norm = torch.sum(z, dim=(2, 3, 4)) * (self.dx) ** 3
+        z = z / norm[:, :, None, None, None]
         return z
+
+
+class Encode3db(nn.Module):
+    def __init__(
+        self,
+        input_channels: int,
+        linear_input_size: int,
+        hidden_channels: int,
+        latent_dimension: int,
+        padding: int,
+        padding_mode: str,
+        kernel_size: int,
+        pooling_size: int,
+        activation: str,
+    ):
+
+        super().__init__()
+
+        activation = getattr(torch.nn, activation)()
+
+        self.block_1 = nn.Sequential(
+            # nn.BatchNorm1d(input_channels),
+            nn.Conv3d(
+                in_channels=input_channels,
+                out_channels=hidden_channels,
+                kernel_size=kernel_size,
+                padding=padding,
+                padding_mode="circular",
+            ),
+            activation,
+            nn.AvgPool3d(kernel_size=pooling_size),
+            nn.BatchNorm3d(hidden_channels),
+        )
+        self.block_2 = nn.Sequential(
+            nn.Conv3d(
+                in_channels=hidden_channels,
+                out_channels=hidden_channels,
+                kernel_size=kernel_size,
+                padding=padding,
+                padding_mode="circular",
+            ),
+            activation,
+            nn.AvgPool3d(kernel_size=pooling_size),
+            nn.BatchNorm3d(hidden_channels),
+        )
+        self.block_3 = nn.Sequential(
+            nn.Conv3d(
+                in_channels=hidden_channels,
+                out_channels=hidden_channels,
+                kernel_size=kernel_size,
+                padding=padding,
+                padding_mode="circular",
+            ),
+            activation,
+            nn.AvgPool3d(kernel_size=pooling_size),
+            nn.BatchNorm3d(hidden_channels),
+        )
+        self.final_mu = nn.Sequential(
+            nn.Linear(
+                hidden_channels * int(linear_input_size / (pooling_size ** 3)) ** 3,
+                100,
+            ),
+            activation,
+            nn.Linear(100, 50),
+            activation,
+            nn.Linear(50, latent_dimension),
+        )
+        self.final_logsigma = nn.Sequential(
+            nn.Linear(
+                hidden_channels * int(linear_input_size / (pooling_size ** 3)) ** 3,
+                100,
+            ),
+            activation,
+            nn.Linear(100, 50),
+            activation,
+            nn.Linear(50, latent_dimension),
+        )
+
+    def forward(self, x: torch.Tensor) -> Tuple:
+        x = self.block_1(x)
+        x = self.block_2(x)
+        x = self.block_3(x)
+        x = x.view(x.shape[0], -1)
+
+        x_mu = self.final_mu(x)
+        x_logstd = self.final_logsigma(x)
+        return x_mu, x_logstd
+
 
 
 class DecodeNorm(nn.Module):

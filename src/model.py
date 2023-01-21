@@ -443,7 +443,7 @@ class Pilati_model_3_layer(nn.Module):
         padding: int,
         padding_mode: str,
         pooling_size: int,
-        activation:torch.nn.Module,
+        activation: torch.nn.Module,
     ):
 
         super().__init__()
@@ -501,7 +501,6 @@ class Pilati_model_3_layer(nn.Module):
         x = self.flat(x)
         x = self.final_dense(x)
         return x
-
 
 
 class Pilati_model_5_layer(nn.Module):
@@ -1065,6 +1064,41 @@ class Energy(nn.Module):
         eng_2 = self.dx * torch.einsum("ai,ai->a", self.v, x)
         eng_2_trapz = torch.trapz(self.v * x, dx=self.dx, dim=1)
         return eng_1 + eng_2, eng_1 + eng_2_trapz, x
+
+
+class Energy3D(nn.Module):
+    def __init__(self, F_universal: nn.Module, v: torch.Tensor, dx: float, mu: float):
+        super().__init__()
+        self.model = F_universal
+        self.v = v
+        self.dx = dx
+        self.mu = mu
+
+    def forward(self, z: torch.Tensor):
+        """Value of the Energy function given the potential
+
+        Returns:
+            [pt.tensor]: [The energy values of the different samples. shape=(n_istances)]
+        """
+        # self.Func.eval()
+        x, eng_1 = self.model(z)
+        eng_1 = eng_1.view(x.shape[0])
+        eng_2 = torch.einsum("aijk,ijk->a", x, self.v) * (self.dx) ** 3
+        norm = torch.sum(x, axis=(1, 2, 3)) * (self.dx) ** 3
+        # eng_2 = pt.trapezoid(eng_2, dx=self.dx, dim=1)
+        return eng_1 + eng_2, norm, x
+
+    def batch_calculation(self, z: torch.Tensor):
+        x, eng_1 = self.model(z)
+        eng_1 = eng_1.view(x.shape[0])
+        eng_2 = torch.einsum("aijk,aijk->a", self.v, x) * (self.dx) ** 3
+        return eng_1 + eng_2, x
+
+    def ml_calculation(self, x: torch.Tensor):
+
+        eng_1 = self.model.DFTModel(x.unsqueeze(1)).squeeze()
+        eng_2 = torch.einsum("ai,ai->a", self.v, x) * (self.dx) ** 3
+        return eng_1 + eng_2, x
 
 
 class DenseVAE(nn.Module):
