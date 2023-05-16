@@ -10,11 +10,10 @@ from src.training.utils import (
     make_data_loader,
     get_optimizer,
     count_parameters,
-    VaeLoss,
-    VaeLossMSE,
     from_txt_to_bool,
 )
-from src.training.train_module import fit
+from src.losses import DFTVAELoss
+from src.training.train_module import fit, fit2ndGEN
 import torch.nn as nn
 import argparse
 import os
@@ -37,7 +36,7 @@ parser.add_argument("--name", type=str, help="name of the model", default=None)
 parser.add_argument(
     "--data_path",
     type=str,
-    help="seed for pytorch and numpy (default=data/dataset_meyer/dataset_meyer_test_256_15k_a_1-10_b_04-06_c_003-01.npz)",
+    help="data path (default=data/dataset_meyer/dataset_meyer_test_256_15k_a_1-10_b_04-06_c_003-01.npz)",
     default="data/dataset_meyer/dataset_meyer_test_256_15k_a_1-10_b_04-06_c_003-01.npz",
 )
 
@@ -126,7 +125,7 @@ model_parser.add_argument(
     "--ModelType",
     type=str,
     help="if the model is generative or not (default=True)",
-    default="DFTVAEnorm",
+    default="DFTVAEnorm2ndGEN",
 )
 
 model_parser.add_argument(
@@ -149,8 +148,16 @@ model_parser.add_argument(
 model_parser.add_argument(
     "--hidden_channels",
     type=int,
-    help="list of hidden channels (default=60)",
-    default=60,
+    help="list of hidden channels (default=20)",
+    default=20,
+)
+
+parser.add_argument(
+    "--hidden_neurons",
+    type=int,
+    nargs="+",
+    help="list of hidden neurons (default=[40,40,40])",
+    default=[40, 40, 40],
 )
 
 model_parser.add_argument(
@@ -183,11 +190,19 @@ model_parser.add_argument(
 )
 
 model_parser.add_argument(
-    "--loss_parameter",
+    "--loss_parameter1",
     type=float,
     help="the amplitude of the kldiv (default=1e-06)",
     default=10 ** -6,
 )
+
+model_parser.add_argument(
+    "--loss_parameter2",
+    type=float,
+    help="the convex parameter of the full loss (default=0.5)",
+    default=0.5,
+)
+
 
 model_parser.add_argument(
     "--activation",
@@ -200,7 +215,7 @@ model_parser.add_argument(
     "--model_name",
     type=str,
     help="name of the model (default='cnn_for_gaussian')",
-    default="cnn_softplus_noavgpooling_for_gaussian",
+    default="meyer_case_2ndGEN/test_meyer",
 )
 
 # pooling_size_dft=args.pooling_size_dft,
@@ -284,20 +299,26 @@ def main(args):
     name_ks = f"_{kernel_size}_ks"
     name_pooling_size = f"_{pooling_size}_ps"
     name_latent_dimension = f"_{args.latent_dimension}_ls"
-    name_loss_parameter = f"_{args.loss_parameter}_vb"
+    name_loss_parameter2 = f"_{args.loss_parameter2}_vb"
+    name_loss_parameter1 = f"_{args.loss_parameter1}_alpha"
+    name_hidden_neurons = f"_{args.hidden_neurons}_hidden_neurons"
     model_name = (
         model_name
         + name_hc
         + name_ks
         + name_pooling_size
+        + name_hidden_neurons
         + name_latent_dimension
-        + name_loss_parameter
+        + name_loss_parameter1
+        + name_loss_parameter2
     )
 
     # Set the dataset path
     file_name = args.data_path
 
-    loss_func = VaeLossMSE(variational_beta=args.loss_parameter)
+    loss = DFTVAELoss(
+        loss_parameter=args.loss_parameter1, variational_beta=args.loss_parameter2
+    )
 
     if args.load:
 
@@ -343,8 +364,7 @@ def main(args):
         model = model_class(
             input_size=input_size,
             latent_dimension=args.latent_dimension,
-            loss_generative=loss_func,
-            loss_dft=nn.MSELoss(),
+            loss=loss,
             input_channels=input_channel,
             hidden_channels=hc,
             kernel_size=kernel_size,
@@ -356,6 +376,7 @@ def main(args):
             activation=args.activation,
             # only provisional
             dx=args.l / args.input_size,
+            hidden_neurons=args.hidden_neurons,
         )
 
         # if args.ModelType == "DFTVAEnorm":
@@ -393,8 +414,8 @@ def main(args):
     )
 
     opt = get_optimizer(lr=lr, model=model, weight_decay=args.regularization)
-    fit(
-        supervised=not (from_txt_to_bool(args.generative)),
+    fit2ndGEN(
+        # supervised=not (from_txt_to_bool(args.generative)),
         model=model,
         train_dl=train_dl,
         opt=opt,

@@ -350,7 +350,7 @@ class DFTVAEnorm2ndGEN(nn.Module):
         kernel_size: int,
         kernel_size_dft: int,
         pooling_size: int,
-        loss:nn.Module,
+        loss: nn.Module,
         output_size: int,
         activation: nn.Module,
         hidden_neurons: List,
@@ -359,8 +359,8 @@ class DFTVAEnorm2ndGEN(nn.Module):
 
         super().__init__()
 
-        self.loss=loss
-        
+        self.loss = loss
+
         self.Encoder = Encode(
             latent_dimension=latent_dimension,
             hidden_channels=hidden_channels,
@@ -415,17 +415,28 @@ class DFTVAEnorm2ndGEN(nn.Module):
         else:
             return mu
 
-    
-    def train_step(self,batch:Tuple,device:str):
-        x,y=batch
+    def train_step(self, batch: Tuple, device: str):
+        x, y = batch
         # generative step
+        y = y.to(device=device)
         x = x.unsqueeze(1).to(device=device)
         latent_mu, latent_logvar = self.Encoder(x)
         latent = self._latent_sample(latent_mu, latent_logvar)
         x_recon = self.Decoder(latent)
         # prediction
-        y_pred=self.DFTModel(latent_mu)
-        loss=self.loss(x,y,x_recon,y_pred)
+        y_pred = self.DFTModel(latent_mu)
+        loss, _, _ = self.loss(x, y, x_recon, y_pred, latent_mu, latent_logvar)
         return loss
 
-    
+    def valid_step(self, batch: Tuple, device: str):
+        x, y = batch
+        # generative step
+        y = y.to(device=device)
+        x = x.unsqueeze(1).to(device=device)
+        latent_mu, latent_logvar = self.Encoder(x)
+        latent = self._latent_sample(latent_mu, latent_logvar)
+        x_recon = self.Decoder(latent)
+        # prediction
+        y_pred = self.DFTModel(latent_mu)
+        loss, l1, l2 = self.loss(x, y, x_recon, y_pred, latent_mu, latent_logvar)
+        return (loss, l1, l2)

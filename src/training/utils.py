@@ -123,9 +123,9 @@ class VaeLossMSE(nn.Module):
         recon_loss = F.mse_loss(
             recon_x.view(recon_x.shape[0], -1),
             x.view(x.shape[0], -1),
-            reduction="sum",
+            reduction="mean",
         )
-        kldivergence = -0.5 * pt.sum(1 + logvar - mu.pow(2) - logvar.exp())
+        kldivergence = -0.5 * pt.mean(1 + logvar - mu.pow(2) - logvar.exp())
         return recon_loss + self.variational_beta * kldivergence, kldivergence
 
 

@@ -154,19 +154,18 @@ class Pilati_model_3d_3_layer(nn.Module):
 
 class PredictionHead(nn.Module):
     def __init__(self, hidden_neurons: List, latent_space: int, activation: str):
-
         super().__init__()
-
         activation = getattr(torch.nn, activation)()
-
-        self.model = nn.ModuleList([])
-
-        self.model.add_module(nn.Linear(latent_space, hidden_neurons[0]))
-        self.model.add_module(activation)
+        self.block = nn.Sequential()
+        self.block.add_module(f"{0} layer", nn.Linear(latent_space, hidden_neurons[0]))
+        self.block.add_module(f"{0} act", activation)
         for i in range(1, len(hidden_neurons) - 2):
-            self.model.add_module(nn.Linear(hidden_neurons[i], hidden_neurons[i + 1]))
-            self.model.add_module(activation)
-        self.model.add_module(nn.Linear(hidden_neurons[-1], 1))
+            self.block.add_module(
+                f"{i} layer", nn.Linear(hidden_neurons[i], hidden_neurons[i + 1])
+            )
+            self.block.add_module(f"{i} act", activation)
+        self.block.add_module(f"{-1} layer", nn.Linear(hidden_neurons[-1], 1))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.model(x)
+        x=self.block(x)
+        return x
