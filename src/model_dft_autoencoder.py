@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from torchmetrics import R2Score
 from zmq import device
-from src.model_dft import Pilati_model_3_layer, Pilati_model_3d_3_layer
+from src.model_dft import Pilati_model_3_layer, Pilati_model_3d_3_layer, PredictionHead
 from src.model_vae import Encode, DecodeNorm, Encode3d, DecodeNorm3d, Encode3db
 
 
@@ -336,3 +336,96 @@ class DFTVAEnorm3Db(nn.Module):
         x = self.DFTModel(x).to(device=device).squeeze()
         r2.update(x.cpu().detach(), y.cpu().detach())
         return r2
+
+
+class DFTVAEnorm2ndGEN(nn.Module):
+    def __init__(
+        self,
+        latent_dimension: int,
+        hidden_channels: int,
+        input_channels: int,
+        input_size: int,
+        padding: int,
+        padding_mode: str,
+        kernel_size: int,
+        kernel_size_dft: int,
+        pooling_size: int,
+        loss:nn.Module,
+        output_size: int,
+        activation: nn.Module,
+        hidden_neurons: List,
+        dx: float,
+    ):
+
+        super().__init__()
+
+        self.loss=loss
+        
+        self.Encoder = Encode(
+            latent_dimension=latent_dimension,
+            hidden_channels=hidden_channels,
+            input_channels=input_channels,
+            padding=padding,
+            padding_mode=padding_mode,
+            kernel_size=kernel_size,
+            input_size=input_size,
+            pooling_size=pooling_size,
+            activation=activation,
+        )
+        self.Decoder = DecodeNorm(
+            latent_dimension=latent_dimension,
+            hidden_channels=hidden_channels,
+            output_channels=input_channels,
+            padding=padding,
+            padding_mode=padding_mode,
+            kernel_size=kernel_size,
+            output_size=input_size,
+            pooling_size=pooling_size,
+            activation=activation,
+            dx=dx,
+        )
+        self.DFTModel = PredictionHead(
+            hidden_neurons=hidden_neurons,
+            latent_space=latent_dimension,
+            activation=activation,
+        )
+
+    def forward(self, z: torch.Tensor):
+        x = self.Decoder(z)
+        f = self.DFTModel(z)
+        x = x.view(x.shape[0], -1)
+        return x, f
+
+    def proposal(self, z: torch.Tensor):
+        x = self.Decoder(z)
+        x = x.view(x.shape[0], -1)
+        return x
+
+    def functional(self, z: torch.Tensor):
+        return self.DFTModel(z)
+
+    def _latent_sample(self, mu, logvar):
+        if self.training:
+            # the reparameterization trick
+            std = (logvar * 0.5).exp()
+            return torch.distributions.Normal(loc=mu, scale=std).rsample()
+            # std = logvar.mul(0.5).exp_()
+            # eps = torch.empty_like(std).normal_()
+            # return eps.mul(std).add_(mu)
+        else:
+            return mu
+
+    
+    def train_step(self,batch:Tuple,device:str):
+        x,y=batch
+        # generative step
+        x = x.unsqueeze(1).to(device=device)
+        latent_mu, latent_logvar = self.Encoder(x)
+        latent = self._latent_sample(latent_mu, latent_logvar)
+        x_recon = self.Decoder(latent)
+        # prediction
+        y_pred=self.DFTModel(latent_mu)
+        loss=self.loss(x,y,x_recon,y_pred)
+        return loss
+
+    
