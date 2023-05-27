@@ -3,7 +3,7 @@ import argparse
 import torch
 import numpy as np
 from src.training.utils import from_txt_to_bool
-from src.model import Energy3D
+from src.model import Energy
 
 
 parser = argparse.ArgumentParser()
@@ -38,7 +38,7 @@ parser.add_argument(
     "--final_lr",
     type=float,
     help="learning rate at final epoch (dynamic) (default=10**-6)",
-    default=10 ** -6,
+    default=10**-6,
 )
 
 parser.add_argument(
@@ -46,13 +46,6 @@ parser.add_argument(
     type=str,
     help="if True set the early stopping option (default=False)",
     default="False",
-)
-
-parser.add_argument(
-    "--mu",
-    type=float,
-    help="Chemical potential for the normalization, softconstrain (default=0)",
-    default=0,
 )
 
 
@@ -126,7 +119,6 @@ print(args)
 gd = GradientDescent(
     n_instances=args.n_instances,
     loglr=args.loglr,
-    cut=128,
     logdiffsoglia=args.logdiffsoglia,
     n_ensambles=args.n_ensambles,
     target_path=args.target_path,
@@ -141,9 +133,9 @@ gd = GradientDescent(
     seed=args.seed,
     num_threads=args.num_threads,
     device=args.device,
-    mu=args.mu,
     init_path=args.init_path,
-    Energy=Energy3D,
+    Energy=Energy,
+    dimension="1D",
 )
 
 

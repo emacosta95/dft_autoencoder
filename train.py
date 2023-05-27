@@ -5,7 +5,6 @@ import torch as pt
 import numpy as np
 from torch.nn.modules import pooling
 from tqdm import tqdm, trange
-from src.model import DFTVAE, DFTVAEDense, DFTVAEIsing, DFTVAEnorm, DFTVAEnormHeavy
 from src.training.utils import (
     make_data_loader,
     get_optimizer,
@@ -13,6 +12,7 @@ from src.training.utils import (
     from_txt_to_bool,
 )
 from src.losses import DFTVAELoss
+from src.training.utils import VaeLossMSE
 from src.training.train_module import fit, fit2ndGEN
 import torch.nn as nn
 import argparse
@@ -73,7 +73,7 @@ parser.add_argument(
     "--early_stopping",
     type=float,
     help="the threshold difference for the early stopping (default=10**-4)",
-    default=10 ** -4,
+    default=10**-4,
 )
 
 parser.add_argument(
@@ -112,6 +112,29 @@ parser.add_argument(
     default=1,
 )
 
+parser.add_argument(
+    "--loss_parameter1",
+    type=float,
+    help="the amplitude of the kldiv (default=1e-06)",
+    default=10**-6,
+)
+
+parser.add_argument(
+    "--loss_parameter2",
+    type=float,
+    help="the convex parameter of the full loss (default=0.5)",
+    default=0.5,
+)
+
+
+parser.add_argument(
+    "--training_restriction",
+    type=str,
+    help="trains just a set of parameters, it could be either 'generative' or 'prediction'",
+    default="generative",
+)
+
+
 model_parser = subparsers.add_parser("model", help="model hparameters")
 
 model_parser.add_argument(
@@ -141,24 +164,26 @@ model_parser.add_argument(
 model_parser.add_argument(
     "--latent_dimension",
     type=int,
-    help="number of features of the input (default=16)",
-    default=16,
+    help="number of features of the input (default=2)",
+    default=2,
 )
 
 model_parser.add_argument(
-    "--hidden_channels",
-    type=int,
-    help="list of hidden channels (default=20)",
-    default=20,
-)
-
-parser.add_argument(
-    "--hidden_neurons",
+    "--hidden_channels_vae",
     type=int,
     nargs="+",
-    help="list of hidden neurons (default=[40,40,40])",
-    default=[40, 40, 40],
+    help="list of hidden channels in the VAE Model (default=20)",
+    default=[60, 60, 60, 60, 60],
 )
+
+model_parser.add_argument(
+    "--hidden_channels_dft",
+    type=int,
+    nargs="+",
+    help="list of hidden channels in the DFTModel (default=[40,40,40,40,40])",
+    default=[40, 40, 40, 40, 40],
+)
+
 
 model_parser.add_argument(
     "--pooling_size",
@@ -189,20 +214,6 @@ model_parser.add_argument(
     default="zeros",
 )
 
-model_parser.add_argument(
-    "--loss_parameter1",
-    type=float,
-    help="the amplitude of the kldiv (default=1e-06)",
-    default=10 ** -6,
-)
-
-model_parser.add_argument(
-    "--loss_parameter2",
-    type=float,
-    help="the convex parameter of the full loss (default=0.5)",
-    default=0.5,
-)
-
 
 model_parser.add_argument(
     "--activation",
@@ -212,50 +223,20 @@ model_parser.add_argument(
 )
 
 model_parser.add_argument(
-    "--model_name",
+    "--model_directory",
     type=str,
-    help="name of the model (default='cnn_for_gaussian')",
-    default="meyer_case_2ndGEN/test_meyer",
+    help="name of the directory where the models are saved (default='cnn_for_gaussian')",
+    default="meyer_case/",
 )
+
 
 # pooling_size_dft=args.pooling_size_dft,
 # kernel_size_dft=args.kernel_size_dft,
 # hidden_channels_dft=args.hidden_channels_dft,
 # padding_dft=args.padding_dft,
 
-model_parser.add_argument(
-    "--padding_dft",
-    type=int,
-    help="padding size (default=6)",
-    default=6,
-)
-
-
-model_parser.add_argument(
-    "--kernel_size_dft",
-    type=int,
-    help="kernel size (default=13)",
-    default=13,
-)
-
-
-model_parser.add_argument(
-    "--pooling_size_dft",
-    type=int,
-    help="pooling size (default=1)",
-    default=1,
-)
-
-model_parser.add_argument(
-    "--hidden_channels_dft",
-    type=int,
-    help="hidden channels dft nn (default=30)",
-    default=30,
-)
-
 
 def main(args):
-
     # hyperparameters
 
     device = pt.device(args.device)
@@ -263,7 +244,6 @@ def main(args):
     input_size = args.input_size
 
     # 256 for model test, 30 for the others
-    hc = args.hidden_channels
     output_size = 1
     pooling_size = args.pooling_size
 
@@ -294,37 +274,29 @@ def main(args):
     early_stopping = args.early_stopping
 
     # Set the model name
-    model_name = args.model_name
-    name_hc = f"_{hc}_hc"
-    name_ks = f"_{kernel_size}_ks"
-    name_pooling_size = f"_{pooling_size}_ps"
-    name_latent_dimension = f"_{args.latent_dimension}_ls"
-    name_loss_parameter2 = f"_{args.loss_parameter2}_vb"
-    name_loss_parameter1 = f"_{args.loss_parameter1}_alpha"
-    name_hidden_neurons = f"_{args.hidden_neurons}_hidden_neurons"
-    model_name = (
-        model_name
-        + name_hc
-        + name_ks
-        + name_pooling_size
-        + name_hidden_neurons
-        + name_latent_dimension
-        + name_loss_parameter1
-        + name_loss_parameter2
-    )
+    name_loss_parameter2 = f"l2_{args.loss_parameter2}"
+    name_loss_parameter1 = f"l1_{args.loss_parameter1}_"
+    training_description = name_loss_parameter1 + name_loss_parameter2
+
+    model_directory = args.model_directory
 
     # Set the dataset path
     file_name = args.data_path
 
-    loss = DFTVAELoss(
-        loss_parameter=args.loss_parameter1, variational_beta=args.loss_parameter2
-    )
+    if args.ModelType == "DFTVAEnorm2ndGEN":
+        loss = DFTVAELoss(
+            loss_parameter=args.loss_parameter1,
+            variational_beta=args.loss_parameter2,
+        )
+
+    else:
+        loss = {}
+        loss["generative"] = VaeLossMSE(args.loss_parameter2)
+        loss["prediction"] = nn.MSELoss()
 
     if args.load:
-
         print(f"loading the model {args.name}")
         if args.generative:
-
             if os.path.isfile(
                 f"losses_dft_pytorch/{args.name}" + "_loss_valid_generative"
             ):
@@ -338,7 +310,6 @@ def main(args):
                 history_valid = []
                 history_train = []
         else:
-
             if os.path.isfile(f"losses_dft_pytorch/{args.name}" + "_loss_valid_dft"):
                 history_valid = pt.load(
                     f"losses_dft_pytorch/{args.name}" + "_loss_valid_dft"
@@ -352,10 +323,13 @@ def main(args):
 
         print(len(history_train), len(history_valid))
         model = pt.load(f"model_dft_pytorch/{args.name}", map_location=device)
-        model.loss_dft = nn.MSELoss()
         model_name = args.name
+        # redefine the loss
+        model.training_restriction = args.training_restriction
+        # we should implement a getter for this
+        if args.ModelType == "DFTVAEnorm":
+            model.loss = loss[args.training_restriction]
     else:
-
         history_valid = []
         history_train = []
 
@@ -366,42 +340,25 @@ def main(args):
             latent_dimension=args.latent_dimension,
             loss=loss,
             input_channels=input_channel,
-            hidden_channels=hc,
+            hidden_channels_vae=args.hidden_channels_vae,
+            hidden_channels_dft=args.hidden_channels_dft,
             kernel_size=kernel_size,
-            kernel_size_dft=args.kernel_size_dft,
             padding=padding,
             padding_mode=padding_mode,
             pooling_size=pooling_size,
-            output_size=output_size,
+            output_size=input_size,
             activation=args.activation,
             # only provisional
             dx=args.l / args.input_size,
-            hidden_neurons=args.hidden_neurons,
+            training_restriction=args.training_restriction,
         )
 
-        # if args.ModelType == "DFTVAEnorm":
-
-        #     model = DFTVAEnorm(
-        #         input_size=input_size,
-        #         latent_dimension=args.latent_dimension,
-        #         loss_generative=loss_func,
-        #         loss_dft=nn.MSELoss(),
-        #         input_channels=input_channel,
-        #         hidden_channels=hc,
-        #         kernel_size=kernel_size,
-        #         kernel_size_dft=args.kernel_size_dft,
-        #         padding=padding,
-        #         padding_mode=padding_mode,
-        #         pooling_size=pooling_size,
-        #         output_size=output_size,
-        #         activation=nn.Softplus(),
-        #         # only provisional
-        #         dx=args.l / args.input_size,
-        #     )
+        model.name_checkpoint(training_description, args.model_directory)
 
     model = model.to(pt.double)
     model = model.to(device=device)
 
+    print(model.model_name)
     print(model)
     print(count_parameters(model))
     print(args)
@@ -414,6 +371,7 @@ def main(args):
     )
 
     opt = get_optimizer(lr=lr, model=model, weight_decay=args.regularization)
+
     fit2ndGEN(
         # supervised=not (from_txt_to_bool(args.generative)),
         model=model,
@@ -422,7 +380,6 @@ def main(args):
         epochs=epochs,
         valid_dl=valid_dl,
         checkpoint=True,
-        name_checkpoint=model_name,
         history_train=history_train,
         history_valid=history_valid,
         loss_func=nn.MSELoss(),
@@ -435,7 +392,6 @@ def main(args):
 
 
 if __name__ == "__main__":
-
     args = parser.parse_args()
 
     main(args)

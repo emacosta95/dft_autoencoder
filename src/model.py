@@ -1,5 +1,5 @@
 from re import X
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 import torch
 import torch.nn as nn
 from torchmetrics import R2Score
@@ -19,7 +19,6 @@ class Encode(nn.Module):
         pooling_size: int,
         activation: nn.Module,
     ):
-
         super().__init__()
 
         self.block_1 = nn.Sequential(
@@ -61,7 +60,7 @@ class Encode(nn.Module):
         )
         self.final_mu = nn.Sequential(
             nn.Linear(
-                4 * hidden_channels * int(input_size / (pooling_size ** 3)),
+                4 * hidden_channels * int(input_size / (pooling_size**3)),
                 100,
             ),
             activation,
@@ -71,7 +70,7 @@ class Encode(nn.Module):
         )
         self.final_logsigma = nn.Sequential(
             nn.Linear(
-                4 * hidden_channels * int(input_size / (pooling_size ** 3)),
+                4 * hidden_channels * int(input_size / (pooling_size**3)),
                 100,
             ),
             activation,
@@ -152,7 +151,7 @@ class Decode(nn.Module):
         z = z.view(
             -1,
             4 * self.hidden_channel,
-            int(self.output_size / (self.pooling_size ** 3)),
+            int(self.output_size / (self.pooling_size**3)),
         )
         z = self.block_conv1(z)
         z = self.block_conv2(z)
@@ -223,7 +222,7 @@ class DecodeNorm(nn.Module):
     def forward(self, z: torch.Tensor) -> torch.Tensor:
         z = self.recon_block(z)
         z = z.view(
-            -1, self.hidden_channel, int(self.output_size / (self.pooling_size ** 3))
+            -1, self.hidden_channel, int(self.output_size / (self.pooling_size**3))
         )
         z = self.block_conv1(z)
         z = self.block_conv2(z)
@@ -247,7 +246,6 @@ class VarAE(nn.Module):
         padding_mode: str,
         kernel_size: int,
     ):
-
         super().__init__()
 
         self.encoder = Encode(
@@ -271,7 +269,6 @@ class VarAE(nn.Module):
         )
 
     def forward(self, x):
-
         latent_mu, latent_logvar = self.encoder(x)
         latent = self.latent_sample(latent_mu, latent_logvar)
         x_recon = self.decoder(latent)
@@ -279,7 +276,6 @@ class VarAE(nn.Module):
         return x_recon, latent_mu, latent_logvar
 
     def latent_sample(self, mu, logvar):
-
         if self.training:
             # the reparameterization trick
             std = (logvar * 0.5).exp()
@@ -415,7 +411,7 @@ class DFT_model_5_layer(nn.Module):
         self.flat = nn.Flatten()
 
         self.final_dense = nn.Sequential(
-            nn.Linear(hidden_channel * int(256 / pooling_size ** 5), 20),
+            nn.Linear(hidden_channel * int(256 / pooling_size**5), 20),
             nn.Softplus(),
             nn.Linear(20, 1),
         )
@@ -445,7 +441,6 @@ class Pilati_model_3_layer(nn.Module):
         pooling_size: int,
         activation: torch.nn.Module,
     ):
-
         super().__init__()
 
         self.model_1 = nn.Sequential(
@@ -490,11 +485,10 @@ class Pilati_model_3_layer(nn.Module):
         self.flat = nn.Flatten()
 
         self.final_dense = nn.Sequential(
-            nn.Linear(hidden_channel * int(input_size / pooling_size ** 3), 1)
+            nn.Linear(hidden_channel * int(input_size / pooling_size**3), 1)
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-
         x = self.model_1(x)
         x = self.model_2(x)
         x = self.model_3(x)
@@ -611,7 +605,6 @@ class DFTVAE(nn.Module):
         loss_dft: nn.Module,
         output_size: int,
     ):
-
         super().__init__()
 
         self.loss_generative = loss_generative
@@ -699,107 +692,6 @@ class DFTVAE(nn.Module):
         return r2
 
 
-class DFTVAEIsing(nn.Module):
-    def __init__(
-        self,
-        latent_dimension: int,
-        hidden_channels: int,
-        input_channels: int,
-        input_size: int,
-        padding: int,
-        padding_mode: str,
-        kernel_size: int,
-        pooling_size: int,
-        loss_generative: nn.Module,
-        loss_dft: nn.Module,
-        output_size: int,
-    ):
-
-        super().__init__()
-
-        self.loss_generative = loss_generative
-        self.loss_dft = loss_dft
-
-        self.Encoder = Encode(
-            latent_dimension=latent_dimension,
-            hidden_channels=hidden_channels,
-            input_channels=input_channels,
-            padding=padding,
-            padding_mode=padding_mode,
-            kernel_size=kernel_size,
-            input_size=input_size,
-            pooling_size=pooling_size,
-        )
-        self.Decoder = Decode(
-            latent_dimension=latent_dimension,
-            hidden_channels=hidden_channels,
-            output_channels=input_channels,
-            padding=padding,
-            padding_mode=padding_mode,
-            kernel_size=kernel_size,
-            output_size=input_size,
-            pooling_size=pooling_size,
-        )
-        self.DFTModel = Pilati_model_5_layer(
-            input_size=input_size,
-            input_channel=input_channels,
-            hidden_channel=hidden_channels,
-            padding=padding,
-            padding_mode=padding_mode,
-            kernel_size=kernel_size,
-            pooling_size=pooling_size,
-            output_size=output_size,
-        )
-
-    def forward(self, z: torch.Tensor):
-        x = self.Decoder(z)
-        f = self.DFTModel(x)
-        x = x.view(x.shape[0], -1)
-        return x, f
-
-    def proposal(self, z: torch.Tensor):
-        x = self.Decoder(z)
-        x = x.view(x.shape[0], -1)
-        return x
-
-    def functional(self, x: torch.Tensor):
-        x = x.unsqueeze(1)
-        return self.DFTModel(x)
-
-    def _latent_sample(self, mu, logvar):
-        if self.training:
-            # the reparameterization trick
-            std = (logvar * 0.5).exp()
-            return torch.distributions.Normal(loc=mu, scale=std).rsample()
-            # std = logvar.mul(0.5).exp_()
-            # eps = torch.empty_like(std).normal_()
-            # return eps.mul(std).add_(mu)
-        else:
-            return mu
-
-    def train_generative_step(self, batch: Tuple, device: str):
-        x = batch[0]
-        x = x.unsqueeze(1).to(device=device)
-        latent_mu, latent_logvar = self.Encoder(x)
-        latent = self._latent_sample(latent_mu, latent_logvar)
-        x_recon = self.Decoder(latent)
-        loss, kldiv = self.loss_generative(x_recon, x, latent_mu, latent_logvar)
-        return loss, kldiv.item()
-
-    def fit_dft_step(self, batch: Tuple, device: str):
-        x, y = batch
-        x = x.unsqueeze(1).to(device=device)
-        y = y.to(device=device)
-        x = self.DFTModel(x).squeeze()
-        loss = self.loss_dft(x, y)
-        return loss
-
-    def r2_computation(self, batch: Tuple, device: str, r2):
-        x, y = batch
-        x = x.unsqueeze(1).to(device=device)
-        x = self.DFTModel(x).to(device=device).squeeze()
-        r2.update(x.cpu().detach(), y.cpu().detach())
-        return r2
 
 
 class DFTVAEnorm(nn.Module):
@@ -814,17 +706,20 @@ class DFTVAEnorm(nn.Module):
         kernel_size: int,
         kernel_size_dft: int,
         pooling_size: int,
-        loss_generative: nn.Module,
-        loss_dft: nn.Module,
+        loss: nn.Module,
         output_size: int,
         activation: nn.Module,
         dx: float,
+        training_restriction: str,
     ):
-
         super().__init__()
 
-        self.loss_generative = loss_generative
-        self.loss_dft = loss_dft
+        self.training_restriction = training_restriction
+
+        if training_restriction == "prediction":
+            self.loss_dft = loss
+        elif training_restriction == "generative":
+            self.loss_generative = loss
 
         self.Encoder = Encode(
             latent_dimension=latent_dimension,
@@ -887,6 +782,20 @@ class DFTVAEnorm(nn.Module):
         else:
             return mu
 
+    def train_step(self, batch: Tuple, device: str):
+        if self.training_restriction == "prediction":
+            loss = self.train_dft_step(batch, device=device)
+        elif self.training_restriction == "generative":
+            loss = self.train_generative_step(batch, device=device)
+        return loss
+
+    def valid_step(self, batch: Tuple, device: str):
+        if self.training_restriction == "prediction":
+            loss = self.train_dft_step(batch, device=device)
+        elif self.training_restriction == "generative":
+            loss = self.train_generative_step(batch, device=device)
+        return loss
+
     def train_generative_step(self, batch: Tuple, device: str):
         x = batch[0]
         x = x.unsqueeze(1).to(device=device)
@@ -896,20 +805,31 @@ class DFTVAEnorm(nn.Module):
         loss, kldiv = self.loss_generative(x_recon, x, latent_mu, latent_logvar)
         return loss, kldiv
 
-    def fit_dft_step(self, batch: Tuple, device: str):
+    def train_dft_step(self, batch: Tuple, device: str):
         x, y = batch
         x = x.unsqueeze(1).to(device=device)
         y = y.to(device=device)
         x = self.DFTModel(x).squeeze()
         loss = self.loss_dft(x, y)
         return loss
-
-    def r2_computation(self, batch: Tuple, device: str, r2):
-        x, y = batch
-        x = x.unsqueeze(1).to(device=device)
-        x = self.DFTModel(x).to(device=device).squeeze()
-        r2.update(x.cpu().detach(), y.cpu().detach())
-        return r2
+    
+    def freezing_parameters(self):
+        
+        if self.training_restrictions == "prediction":
+            for param in self.Decoder.parameters():
+                param.requires_grad = False
+            for param in self.Encoder.parameters():
+                param.requires_grad = False
+            for param in self.DFTModel.parameters():
+                param.requires_grad = True
+                
+        elif self.training_restrictions == "generative":
+            for param in self.DFTModel.parameters():
+                param.requires_grad = False
+            for param in self.Decoder.parameters():
+                param.requires_grad = True
+            for param in self.Encoder.parameters():
+                param.requires_grad = True
 
 
 class DFTVAEnormHeavy(nn.Module):
@@ -932,7 +852,6 @@ class DFTVAEnormHeavy(nn.Module):
         padding_dft: int,
         dx: float,
     ):
-
         super().__init__()
 
         self.loss_generative = loss_generative
@@ -1023,15 +942,30 @@ class DFTVAEnormHeavy(nn.Module):
         return r2
 
 
-class Energy(nn.Module):
-    def __init__(self, F_universal: nn.Module, v: torch.Tensor, dx: float, mu: float):
-        super().__init__()
-        self.model = F_universal
-        self.v = v
-        self.dx = dx
-        self.mu = mu
+def external_energy_computation(
+    n: torch.Tensor, v: torch.Tensor, dx: float, dimension: Optional[str] = "1D"
+):
+    if dimension == "1D":
+        return torch.einsum("ai,i->a", n, v) * dx
+    elif dimension == "2D":
+        return torch.einsum("aij,ij->a", n, v) * (dx) ** 2
+    elif dimension == "3D":
+        return torch.einsum("aijk,ijk->a", n, v) * (dx) ** 3
 
-    def forward(self, z: torch.Tensor):
+
+class Energy(nn.Module):
+    def __init__(
+        self,
+        model: nn.Module,
+        dx: float,
+        dimension: Optional[str],
+    ):
+        super().__init__()
+        self.model = model
+        self.dx = dx
+        self.dimension = dimension
+
+    def forward(self, z: torch.Tensor, v: torch.Tensor):
         """Value of the Energy function given the potential
 
         Returns:
@@ -1040,29 +974,17 @@ class Energy(nn.Module):
         # self.Func.eval()
         x, eng_1 = self.model(z)
         eng_1 = eng_1.view(x.shape[0])
-        eng_2 = torch.einsum("ai,i->a", x, self.v) * self.dx
-        norm = torch.sum(x, axis=1) * self.dx
-        eng_2_trapz = torch.trapz(x * self.v[None, :], dim=1, dx=self.dx)
+        eng_2 = external_energy_computation(
+            n=x, v=v, dx=self.dx, dimension=self.dimension
+        )
         # eng_2 = pt.trapezoid(eng_2, dx=self.dx, dim=1)
-        return eng_1 + eng_2, eng_1 + eng_2_trapz, norm, x
+        return eng_1 + eng_2, x
 
-    def soft_constrain(self, z: torch.Tensor):
-        eng, eng_exact, norm, x = self.forward(z)
-        cons = self.mu * (norm - 1) ** 2
-        return eng + cons, eng_exact, x
-
-    def batch_calculation(self, z: torch.Tensor):
+    def batch_calculation(self, z: torch.Tensor, v: torch.Tensor):
         x, eng_1 = self.model(z)
         eng_1 = eng_1.view(x.shape[0])
-        eng_2 = self.dx * torch.einsum("ai,ai->a", self.v, x)
-        eng_2_trapz = torch.trapz(self.v * x, dx=self.dx, dim=1)
-        return eng_1 + eng_2, eng_1 + eng_2_trapz, x
-
-    def ml_calculation(self, x: torch.Tensor):
-
-        eng_1 = self.model.DFTModel(x.unsqueeze(1)).squeeze()
-        eng_2 = self.dx * torch.einsum("ai,ai->a", self.v, x)
-        eng_2_trapz = torch.trapz(self.v * x, dx=self.dx, dim=1)
+        eng_2 = self.dx * torch.einsum("ai,ai->a", v, x)
+        eng_2_trapz = torch.trapz(v * x, dx=self.dx, dim=1)
         return eng_1 + eng_2, eng_1 + eng_2_trapz, x
 
 
@@ -1095,7 +1017,6 @@ class Energy3D(nn.Module):
         return eng_1 + eng_2, x
 
     def ml_calculation(self, x: torch.Tensor):
-
         eng_1 = self.model.DFTModel(x.unsqueeze(1)).squeeze()
         eng_2 = torch.einsum("ai,ai->a", self.v, x) * (self.dx) ** 3
         return eng_1 + eng_2, x
@@ -1108,7 +1029,6 @@ class DenseVAE(nn.Module):
         hidden_neurons: List,
         input_size: int,
     ):
-
         super().__init__()
 
         self.latent_dimension = latent_dimension
@@ -1165,7 +1085,6 @@ class DFTVAEDense(nn.Module):
         output_size: int,
         hidden_neurons: List,
     ):
-
         super().__init__()
 
         self.loss_generative = loss_generative

@@ -11,7 +11,7 @@ class Encode(nn.Module):
         self,
         input_channels: int,
         input_size: int,
-        hidden_channels: int,
+        hidden_channels: List,
         latent_dimension: int,
         padding: int,
         padding_mode: str,
@@ -19,51 +19,50 @@ class Encode(nn.Module):
         pooling_size: int,
         activation: str,
     ):
-
         super().__init__()
 
         activation = getattr(torch.nn, activation)()
+        self.conv_list = nn.ModuleList([])
 
-        self.block_1 = nn.Sequential(
-            # nn.BatchNorm1d(input_channels),
-            nn.Conv1d(
-                in_channels=input_channels,
-                out_channels=hidden_channels,
-                kernel_size=kernel_size,
-                padding=padding,
-                padding_mode="circular",
+        self.conv_list.add_module(
+            "block_0",
+            nn.Sequential(
+                # nn.BatchNorm1d(input_channels),
+                nn.Conv1d(
+                    in_channels=input_channels,
+                    out_channels=hidden_channels[0],
+                    kernel_size=kernel_size,
+                    padding=padding,
+                    padding_mode="circular",
+                ),
+                activation,
+                nn.AvgPool1d(kernel_size=pooling_size),
+                nn.BatchNorm1d(hidden_channels[0]),
             ),
-            activation,
-            nn.AvgPool1d(kernel_size=pooling_size),
-            nn.BatchNorm1d(hidden_channels),
         )
-        self.block_2 = nn.Sequential(
-            nn.Conv1d(
-                in_channels=hidden_channels,
-                out_channels=2 * hidden_channels,
-                kernel_size=kernel_size,
-                padding=padding,
-                padding_mode="circular",
-            ),
-            activation,
-            nn.AvgPool1d(kernel_size=pooling_size),
-            nn.BatchNorm1d(2 * hidden_channels),
-        )
-        self.block_3 = nn.Sequential(
-            nn.Conv1d(
-                in_channels=2 * hidden_channels,
-                out_channels=4 * hidden_channels,
-                kernel_size=kernel_size,
-                padding=padding,
-                padding_mode="circular",
-            ),
-            activation,
-            nn.AvgPool1d(kernel_size=pooling_size),
-            nn.BatchNorm1d(4 * hidden_channels),
-        )
+
+        for i in range(len(hidden_channels) - 1):
+            self.conv_list.add_module(
+                f"block_{i+1}",
+                nn.Sequential(
+                    # nn.BatchNorm1d(input_channels),
+                    nn.Conv1d(
+                        in_channels=hidden_channels[i],
+                        out_channels=hidden_channels[i + 1],
+                        kernel_size=kernel_size,
+                        padding=padding,
+                        padding_mode="circular",
+                    ),
+                    activation,
+                    nn.AvgPool1d(kernel_size=pooling_size),
+                    nn.BatchNorm1d(hidden_channels[i + 1]),
+                ),
+            )
+
         self.final_mu = nn.Sequential(
             nn.Linear(
-                4 * hidden_channels * int(input_size / (pooling_size ** 3)),
+                hidden_channels[-1]
+                * int(input_size / (pooling_size ** len(hidden_channels))),
                 100,
             ),
             activation,
@@ -73,7 +72,8 @@ class Encode(nn.Module):
         )
         self.final_logsigma = nn.Sequential(
             nn.Linear(
-                4 * hidden_channels * int(input_size / (pooling_size ** 3)),
+                hidden_channels[-1]
+                * int(input_size / (pooling_size ** len(hidden_channels))),
                 100,
             ),
             activation,
@@ -83,9 +83,8 @@ class Encode(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> Tuple:
-        x = self.block_1(x)
-        x = self.block_2(x)
-        x = self.block_3(x)
+        for conv in self.conv_list:
+            x = conv(x)
         x = x.view(x.shape[0], -1)
 
         x_mu = self.final_mu(x)
@@ -106,7 +105,6 @@ class Encode3d(nn.Module):
         pooling_size: int,
         activation: str,
     ):
-
         super().__init__()
 
         activation = getattr(torch.nn, activation)()
@@ -127,30 +125,30 @@ class Encode3d(nn.Module):
         self.block_2 = nn.Sequential(
             nn.Conv3d(
                 in_channels=hidden_channels,
-                out_channels=2 * hidden_channels,
+                out_channels=hidden_channels,
                 kernel_size=kernel_size,
                 padding=padding,
                 padding_mode="circular",
             ),
             activation,
             nn.AvgPool3d(kernel_size=pooling_size),
-            nn.BatchNorm3d(2 * hidden_channels),
+            nn.BatchNorm3d(hidden_channels),
         )
         self.block_3 = nn.Sequential(
             nn.Conv3d(
-                in_channels=2 * hidden_channels,
-                out_channels=4 * hidden_channels,
+                in_channels=hidden_channels,
+                out_channels=hidden_channels,
                 kernel_size=kernel_size,
                 padding=padding,
                 padding_mode="circular",
             ),
             activation,
             nn.AvgPool3d(kernel_size=pooling_size),
-            nn.BatchNorm3d(4 * hidden_channels),
+            nn.BatchNorm3d(hidden_channels),
         )
         self.final_mu = nn.Sequential(
             nn.Linear(
-                4 * hidden_channels * int(linear_input_size / (pooling_size ** 3)) ** 3,
+                hidden_channels * int(linear_input_size / (pooling_size**3)) ** 3,
                 100,
             ),
             activation,
@@ -160,7 +158,7 @@ class Encode3d(nn.Module):
         )
         self.final_logsigma = nn.Sequential(
             nn.Linear(
-                4 * hidden_channels * int(linear_input_size / (pooling_size ** 3)) ** 3,
+                hidden_channels * int(linear_input_size / (pooling_size**3)) ** 3,
                 100,
             ),
             activation,
@@ -246,9 +244,9 @@ class DecodeNorm3d(nn.Module):
         z = z.view(
             -1,
             self.hidden_channel,
-            int(self.output_size / (self.pooling_size ** 3)),
-            int(self.output_size / (self.pooling_size ** 3)),
-            int(self.output_size / (self.pooling_size ** 3)),
+            int(self.output_size / (self.pooling_size**3)),
+            int(self.output_size / (self.pooling_size**3)),
+            int(self.output_size / (self.pooling_size**3)),
         )
         z = self.block_conv1(z)
         z = self.block_conv2(z)
@@ -274,7 +272,6 @@ class Encode3db(nn.Module):
         pooling_size: int,
         activation: str,
     ):
-
         super().__init__()
 
         activation = getattr(torch.nn, activation)()
@@ -318,7 +315,7 @@ class Encode3db(nn.Module):
         )
         self.final_mu = nn.Sequential(
             nn.Linear(
-                hidden_channels * int(linear_input_size / (pooling_size ** 3)) ** 3,
+                hidden_channels * int(linear_input_size / (pooling_size**3)) ** 3,
                 100,
             ),
             activation,
@@ -328,7 +325,7 @@ class Encode3db(nn.Module):
         )
         self.final_logsigma = nn.Sequential(
             nn.Linear(
-                hidden_channels * int(linear_input_size / (pooling_size ** 3)) ** 3,
+                hidden_channels * int(linear_input_size / (pooling_size**3)) ** 3,
                 100,
             ),
             activation,
@@ -348,12 +345,11 @@ class Encode3db(nn.Module):
         return x_mu, x_logstd
 
 
-
 class DecodeNorm(nn.Module):
     def __init__(
         self,
         latent_dimension: int,
-        hidden_channels: int,
+        hidden_channels: List,
         output_channels: int,
         output_size: int,
         padding: int,
@@ -374,57 +370,61 @@ class DecodeNorm(nn.Module):
         self.recon_block = nn.Sequential(
             nn.Linear(
                 latent_dimension,
-                int(output_size / (pooling_size) ** 3) * hidden_channels,
+                int(output_size / (pooling_size) ** len(hidden_channels))
+                * hidden_channels[0],
             ),
         )
-        self.block_conv1 = nn.Sequential(
-            nn.ConvTranspose1d(
-                in_channels=hidden_channels,
-                out_channels=hidden_channels,
-                kernel_size=kernel_size + 1,
-                stride=2,
-                padding=padding,
+
+        self.conv_list = nn.ModuleList([])
+
+        for i in range(len(hidden_channels) - 1):
+            self.conv_list.add_module(
+                f"block_{i}",
+                nn.Sequential(
+                    nn.ConvTranspose1d(
+                        in_channels=hidden_channels[i],
+                        out_channels=hidden_channels[i + 1],
+                        kernel_size=kernel_size + 1,
+                        stride=2,
+                        padding=padding,
+                    ),
+                    activation,
+                    nn.BatchNorm1d(hidden_channels[i + 1]),
+                ),
+            )
+
+        self.conv_list.add_module(
+            f"block_{i+1}",
+            nn.Sequential(
+                nn.ConvTranspose1d(
+                    in_channels=hidden_channels[-1],
+                    out_channels=output_channels,
+                    kernel_size=kernel_size + 1,
+                    stride=2,
+                    padding=padding,
+                ),
             ),
-            activation,
-            nn.BatchNorm1d(hidden_channels),
         )
-        self.block_conv2 = nn.Sequential(
-            nn.ConvTranspose1d(
-                in_channels=hidden_channels,
-                out_channels=hidden_channels,
-                kernel_size=kernel_size + 1,
-                stride=2,
-                padding=padding,
-            ),
-            activation,
-            nn.BatchNorm1d(hidden_channels),
-        )
-        self.block_conv3 = nn.Sequential(
-            nn.ConvTranspose1d(
-                in_channels=hidden_channels,
-                out_channels=output_channels,
-                kernel_size=kernel_size + 1,
-                stride=2,
-                padding=padding,
-            ),
-        )
+
         self.hidden_channel = hidden_channels
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
-        z = self.recon_block(z)
-        z = z.view(
-            -1, self.hidden_channel, int(self.output_size / (self.pooling_size ** 3))
+        x = self.recon_block(z)
+        x = x.view(
+            -1,
+            self.hidden_channel[0],
+            int(self.output_size / (self.pooling_size ** len(self.hidden_channel))),
         )
-        z = self.block_conv1(z)
-        z = self.block_conv2(z)
-        z = self.block_conv3(z)
-        z = torch.sigmoid(z)
+        for conv in self.conv_list:
+            x = conv(x)
+        # positivity
+        x = torch.sigmoid(x)
+        # x = nn.functional.gelu(x)
         # normalization
         # condition
-        norm = torch.sum(z, dim=2) * self.dx
-        z = z / norm[:, :, None]
-
-        return z
+        norm = torch.sum(x, dim=2) * self.dx
+        x = x / norm[:, :, None]
+        return x
 
 
 class VarAE(nn.Module):
@@ -438,7 +438,6 @@ class VarAE(nn.Module):
         padding_mode: str,
         kernel_size: int,
     ):
-
         super().__init__()
 
         self.encoder = Encode(
@@ -462,7 +461,6 @@ class VarAE(nn.Module):
         )
 
     def forward(self, x):
-
         latent_mu, latent_logvar = self.encoder(x)
         latent = self.latent_sample(latent_mu, latent_logvar)
         x_recon = self.decoder(latent)
@@ -470,7 +468,6 @@ class VarAE(nn.Module):
         return x_recon, latent_mu, latent_logvar
 
     def latent_sample(self, mu, logvar):
-
         if self.training:
             # the reparameterization trick
             std = (logvar * 0.5).exp()

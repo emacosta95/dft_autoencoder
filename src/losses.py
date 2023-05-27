@@ -7,7 +7,7 @@ class DFTVAELoss(nn.Module):
     def __init__(self, loss_parameter: float, variational_beta: float) -> None:
         super().__init__()
 
-        self.loss_dft = nn.MSELoss(reduction="mean")
+        self.loss_dft = nn.MSELoss(reduction="sum")
         self.loss_vae = VaeLossMSE(variational_beta=variational_beta)
         self.loss_parameter = loss_parameter
 

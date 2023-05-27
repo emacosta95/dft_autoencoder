@@ -31,7 +31,6 @@ def fit(
     loss_func: nn.Module,
     supervised: bool,
     checkpoint: bool,
-    name_checkpoint: str,
     history_train: List,
     history_valid: List,
     patiance: int,
@@ -65,10 +64,9 @@ def fit(
     wait = 0
     if supervised:
         r_max = -100000
-    best_loss = 10 ** 9
+    best_loss = 10**9
 
     for epoch in trange(epochs, desc="train epoch"):
-
         model.train()
         loss_ave_train = 0
         loss_ave_valid = 0
@@ -83,7 +81,6 @@ def fit(
         )
 
         for batch_idx, batch in tqdm_iterator:
-
             batch = batch
             if not (supervised):
                 loss, _ = model.train_generative_step(batch, device)
@@ -150,7 +147,7 @@ def fit(
             print(f"EARLY STOPPING AT {early_stopping}")
 
         if checkpoint:
-
+            name_checkpoint = model.model_name
             if best_loss >= loss_ave_valid:
                 print("Decreasing!")
                 torch.save(
@@ -201,7 +198,6 @@ def fit2ndGEN(
     valid_dl: torch.utils.data.DataLoader,
     loss_func: nn.Module,
     checkpoint: bool,
-    name_checkpoint: str,
     history_train: List,
     history_valid: List,
     patiance: int,
@@ -230,10 +226,14 @@ def fit2ndGEN(
 
     wait = 0
 
-    best_loss = 10 ** 9
+    best_loss = 10**9
+    best_l1: float = 10**9
+    best_l2: float = 10**9
+
+    # fix the kind of training that we want to implement
+    model.freezing_parameters()
 
     for epoch in trange(epochs, desc="train epoch"):
-
         model.train()
         loss_ave_train = 0
         loss_ave_valid = 0
@@ -248,7 +248,6 @@ def fit2ndGEN(
         )
 
         for batch_idx, batch in tqdm_iterator:
-
             batch = batch
             loss = model.train_step(batch, device)
             loss.backward()
@@ -264,7 +263,6 @@ def fit2ndGEN(
         #     r2 = R2Score()
 
         for batch in valid_dl:
-
             loss, l1, l2 = model.valid_step(batch, device)
             loss_ave_valid += loss.item()
             l1tot += l1.item()
@@ -285,20 +283,36 @@ def fit2ndGEN(
 
         wait = +1
         metric = best_loss
+
         if decreasing(history_valid, metric, early_stopping):
             wait = 0
         if wait >= patiance:
             print(f"EARLY STOPPING AT {early_stopping}")
 
         if checkpoint:
+            name_checkpoint = model.model_name
+            # print("REQUIRES PARAM PREDICTION= \n")
+            # for param in model.DFTModel.parameters():
+            #     print(param.requires_grad, "\n")
 
-            if best_loss >= loss_ave_valid:
+            if model.training_restriction == "generative":
+                condition = best_l2 >= l2tot / len(valid_dl)
+            elif model.training_restriction == "prediction":
+                condition = best_l1 >= l1tot / len(valid_dl)
+            else:
+                condition = (best_l2 >= l2tot / len(valid_dl)) and (
+                    best_l1 >= l1tot / len(valid_dl)
+                )
+
+            if condition:
                 print("Decreasing!")
                 torch.save(
                     model,
                     f"model_dft_pytorch/{name_checkpoint}",
                 )
                 best_loss = loss_ave_valid
+                best_l1 = l1tot / len(valid_dl)
+                best_l2 = l2tot / len(valid_dl)
 
             torch.save(
                 history_train,
@@ -312,8 +326,10 @@ def fit2ndGEN(
             print(
                 f"loss_ave_train={loss_ave_train} \n"
                 f"loss_ave_valid={loss_ave_valid} \n"
-                f"l1={l1tot/len(valid_dl)}"
-                f"l2={l2tot/len(valid_dl)}"
+                f"l1={l1tot/len(valid_dl)} \n"
+                f"l2={l2tot/len(valid_dl)} \n"
+                f"best l1={best_l1} \n"
+                f"best l2={best_l2} \n"
                 f"epochs={epoch}\n"
             )
 

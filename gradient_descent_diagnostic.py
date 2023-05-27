@@ -1,4 +1,4 @@
-#%%
+# %%
 import time
 from ast import increment_lineno
 from numpy.lib.mixins import _inplace_binary_method
@@ -12,6 +12,7 @@ from scipy import fft, ifft
 import random
 from torch.distributions.normal import Normal
 from src.training.utils import initial_ensamble_random
+from src.gradient_descent import norm_check_ND
 
 device = pt.device("cuda" if pt.cuda.is_available() else "cpu")
 
@@ -46,10 +47,8 @@ def smooth_grad(grad: pt.tensor, cut: int) -> pt.tensor:
 class GradientDescentDiagnostic:
     def __init__(
         self,
-        idx_instance: int,
         n_instances: int,
         loglr: int,
-        cut: int,
         logdiffsoglia: int,
         n_ensambles: int,
         target_path: str,
@@ -59,20 +58,18 @@ class GradientDescentDiagnostic:
         final_lr: float,
         early_stopping: bool,
         L: int,
+        dimension: str,
         resolution: int,
         latent_dimension: int,
         seed: int,
         num_threads: int,
         device: str,
-        mu: float,
         init_path: str,
-        eps_value: float,
+        Energy: nn.Module,
     ):
-
         self.device = device
         self.num_threads = num_threads
         self.seed = seed
-        self.eps_value = eps_value
 
         self.early_stopping = early_stopping
         self.variable_lr = variable_lr
@@ -81,32 +78,32 @@ class GradientDescentDiagnostic:
         self.dx_torch = pt.tensor(L / resolution, dtype=pt.double, device=self.device)
         self.dx = L / resolution
         self.latent_dimension = latent_dimension
-        self.mu = mu
 
+        self.dimension = dimension
+        self.Energy = Energy
         self.n_instances = n_instances
 
         self.loglr = loglr
         if self.early_stopping:
-            self.lr = (10 ** loglr) * pt.ones(n_ensambles, device=self.device)
+            self.lr = (10**loglr) * pt.ones(n_ensambles, device=self.device)
         else:
-            self.lr = pt.tensor(10 ** loglr, device=self.device)
-        self.cut = cut
+            self.lr = pt.tensor(10**loglr, device=self.device)
 
         self.epochs = epochs
-        self.diffsoglia = 10 ** logdiffsoglia
+        self.diffsoglia = 10**logdiffsoglia
         self.n_ensambles = n_ensambles
 
-        self.n_target = np.load(target_path)["density"][idx_instance:]
-        self.v_target = np.load(target_path)["potential"][idx_instance:]
-        self.e_target = np.load(target_path)["energy"][idx_instance:]
-        self.f_target = np.load(target_path)["F"][idx_instance:]
+        self.n_target = np.load(target_path)["density"]
+        self.v_target = np.load(target_path)["potential"]
+        self.e_target = np.load(target_path)["energy"]
+        self.f_target = np.load(target_path)["F"]
         self.init_path = init_path
 
         self.model_name = model_name
 
         if self.variable_lr:
             self.ratio = pt.exp(
-                (1 / epochs) * pt.log(pt.tensor(final_lr) / (10 ** loglr))
+                (1 / epochs) * pt.log(pt.tensor(final_lr) / (10**loglr))
             )
 
         # the set of the loaded data
@@ -122,16 +119,8 @@ class GradientDescentDiagnostic:
         self.min_exct_hist = {}
         self.eng_model_ref = {}
         self.min_z = {}
-        self.total_history = None
 
         self.epochs = epochs
-
-        self.history_energy = []
-        self.history_f = []
-        self.history_density = []
-        self.history_z_module = []
-        self.history_z = []
-        self.history_id_max_component = []
 
     def run(self) -> None:
         """This function runs the entire process of gradient descent for each instance."""
@@ -154,25 +143,21 @@ class GradientDescentDiagnostic:
         model = model.to(device=self.device)
         model.eval()
 
+        # initialize energy (we can put this on a getter in a next version)
+        energy = self.Energy(model=model, dx=self.dx, dimension=self.dimension)
+
         # starting the cycle for each instance
         print("starting the cycle...")
         for idx in trange(0, self.n_instances):
-
             # initialize phi
             z = self.initialize_z()
             print(f"is leaf={z.is_leaf}")
 
             # compute the gradient descent
             # for a single target sample
-            history = self._single_gradient_descent(z=z, idx=idx, model=model)
-            if idx == 0:
-                self.total_history = history.unsqueeze(0).detach().numpy()
-            else:
-                self.total_history = np.append(
-                    self.total_history, history.unsqueeze(0).detach().numpy(), axis=0
-                )
+            z, n_z, eng = self._single_gradient_descent(z=z, idx=idx, energy=energy)
 
-            np.save("local_minima_analysis.npz", self.total_history)
+        return z, n_z, eng
 
     def _model_test(self, model: nn.Module, idx: int) -> None:
         """This routine is a test for the pytorch model (remember the problem of the different outcomes for the same input data)
@@ -188,9 +173,10 @@ class GradientDescentDiagnostic:
         e_ref = self.e_target[idx]
 
         n_ref = self.n_target[idx]
-        n_ref = n_ref.reshape(1, 256)
 
-        energy = Energy(model, pt.tensor(pot, device=self.device), self.dx, self.mu)
+        energy = self.Energy(
+            model, pt.tensor(pot, device=self.device), self.dx, self.mu
+        )
         eng = energy(pt.tensor(n_ref, device=self.device))
         self.eng_model_ref = np.append(self.eng_model_ref, eng.detach().cpu().numpy())
 
@@ -204,18 +190,16 @@ class GradientDescentDiagnostic:
             phi[pt.tensor]: [the initialized phis with non zero gradient]
         """
         norm_check = 1
-
         # generate a likewise density profiles
         ns = np.load(self.init_path)["density"]
         ns = pt.tensor(ns, dtype=pt.double)
         for i in range(self.n_ensambles):
-
             idx = pt.randint(0, ns.shape[0], size=(1,))
 
             if i == 0:
-                x_init = ns[idx].view(1, -1)
+                x_init = ns[idx].unsqueeze(0)
             else:
-                x_init = pt.cat((x_init, ns[idx].view(1, -1)), dim=0)
+                x_init = pt.cat((x_init, ns[idx].unsqueeze(0)), dim=0)
 
         # loading the model
         print("loading the model...")
@@ -229,12 +213,8 @@ class GradientDescentDiagnostic:
         while norm_check > 0.01:
             # initial configuration from pseudo
             # density profiles
-            z, _ = model.Encoder(x_init.unsqueeze(1).to(device=self.device))
+            z, _ = model.Encoder(x_init.to(device=self.device))
             z = z.squeeze(1).detach()
-
-            # provisional for low vb
-            if self.n_instances == 106:
-                z = pt.randn((self.n_ensambles, self.latent_dimension))
 
             # initialize in double and device
             z = z.to(dtype=pt.double)
@@ -243,16 +223,14 @@ class GradientDescentDiagnostic:
             z.requires_grad_(True)
 
             n_z = model.proposal(z)
-            norm = pt.abs(pt.sum(n_z, dim=1) * self.dx - 1)
+            norm = norm_check_ND(n_z, self.dx, dimension=self.dimension)
             norm_check = pt.max(norm)
             print(norm_check)
-
-        print(z.shape)
 
         return z
 
     def _single_gradient_descent(
-        self, z: pt.Tensor, idx: int, model: nn.Module
+        self, z: pt.Tensor, idx: int, energy: nn.Module
     ) -> tuple:
         """This routine compute the gradient descent for an energy functional
         with external potential given by the idx-th instance and kinetic energy functional determined by model.
@@ -273,98 +251,68 @@ class GradientDescentDiagnostic:
         # initialize the single gradient descent
 
         pot = pt.tensor(self.v_target[idx], device=self.device)
-        energy = Energy(model, pot, self.dx, self.mu)
         energy = energy.to(device=self.device)
 
         history = pt.tensor([], device=self.device)
         # exact_history = np.array([])
         eng_old = pt.tensor(0, device=self.device)
-        n_old = np.zeros(256)
 
         # refresh the lr every time
         if self.early_stopping:
-            self.lr = (10 ** self.loglr) * pt.ones(self.n_ensambles, device=self.device)
+            self.lr = (10**self.loglr) * pt.ones(self.n_ensambles, device=self.device)
         else:
-            self.lr = pt.tensor(10 ** self.loglr, device=self.device)
+            self.lr = pt.tensor(10**self.loglr, device=self.device)
 
         # start the gradient descent
         tqdm_bar = tqdm(range(self.epochs))
-        z_old = np.zeros(latent_dimension)
+        n_old = 200
         for epoch in tqdm_bar:
-
-            if self.mu != None:
-                eng, z, n_z = self._step_soft(energy=energy, z=z)
-            else:
-                eng, z, n_z = self._step_hard(energy=energy, z=z)
-
+            eng, z, n_z = self._step(energy=energy, z=z, v=pot)
             diff_eng = pt.abs(eng.detach() - eng_old)
-
             if self.early_stopping:
                 self.lr[diff_eng < self.diffsoglia] = 0
 
             if self.variable_lr:
                 self.lr = self.lr * self.ratio  # ONLY WITH FIXED EPOCHS
 
+            # Meyer's Early stopping
+            # print(n_z.shape)
+            dn = np.sum(np.abs(n_z[0] - self.n_target[idx])) * (self.dx)
+
             if epoch == 0:
                 history = eng.detach().view(1, eng.shape[0])
             elif epoch % 100 == 0:
                 history = pt.cat((history, eng.detach().view(1, eng.shape[0])), dim=0)
 
+            dn_t = np.sum(np.abs(n_z[0] - n_old)) * (self.dx)
+            if dn_t < 10**-6 * self.lr:
+                self.lr = 0.0
+            n_old = n_z[0]
+
             eng_old = eng.detach()
 
-            # if epoch % 1000 == 0:
-            #     self.checkpoints(
-            #         eng=eng,
-            #         n_z=n_z,
-            #         idx=idx,
-            #         history=history,
-            #         epoch=epoch,
-            #         z=z,
-            #     )
-            #     for i in range(history.shape[-1]):
-            #         plt.plot(history[:,i].detach().numpy())
-            #     plt.show()
+            if epoch % 1000 == 0:
+                self.checkpoints(
+                    eng=eng,
+                    n_z=n_z,
+                    idx=idx,
+                    history=history,
+                    epoch=epoch,
+                    z=z,
+                )
 
             idxmin = pt.argmin(eng)
-
-            z_t = z.detach().numpy()[idxmin]
-
-            id_maxvar_component = np.argmax(np.abs(z_t))
-            if epoch == 0:
-                self.history_z = z_t.reshape(1, -1)
-            else:
-                self.history_z = np.append(self.history_z, z_t.reshape(1, -1), axis=0)
-
-            self.history_id_max_component.append(id_maxvar_component)
-
-            dn_t = self.dx * np.sum(np.abs(n_z[idx] - n_old))
-            if dn_t < self.eps_value * (self.lr):
-                self.lr = 0
-
-            n_old = n_z[idxmin]
-
-            f_ml = eng[idxmin].item() - self.dx * np.sum(
-                self.v_target[idx] * n_z[idxmin]
+            f_ml = eng[idxmin].item() - np.sum(self.v_target[idx] * n_z[idxmin]) * (
+                self.dx
             )
             tqdm_bar.set_description(
-                f"e={(eng[idxmin]).item()} f={f_ml} de={(eng[idxmin]).item()-self.e_target[idx]:.5f}, df={(f_ml-self.f_target[idx]):.5f},dn_t={dn_t:.8f} |z|={pt.linalg.norm(z[idxmin]).item():.4f} idx_maxvarz={id_maxvar_component}"
+                f"df={f_ml-self.f_target[idx]:.5f} eng={(eng[idxmin]).item()-self.e_target[idx]:.5f},norm={np.sum(n_z[idxmin])*(self.dx):.5f}, dn={dn:.7f} dn_t={dn_t:.9f}"
             )
             tqdm_bar.refresh()
 
-            if epoch % 500 == 0:
-                plt.plot(n_z[idxmin])
-                plt.plot(self.n_target[idx])
-                plt.show()
+        return z, n_z, eng
 
-            dn = self.dx * np.sum(np.abs(n_z[idxmin] - self.n_target[idx]))
-            self.history_density.append(dn)
-            self.history_energy.append(eng[idxmin].item() - self.e_target[idx])
-            self.history_f.append(-1 * self.f_target[idx] + f_ml)
-            self.history_z_module.append(pt.linalg.norm(z[idxmin]).item())
-
-        return history
-
-    def _step_soft(self, energy: nn.Module, z: pt.Tensor) -> tuple:
+    def _step(self, energy: nn.Module, z: pt.Tensor, v: pt.Tensor) -> tuple:
         """This routine computes the step of the gradient using both the positivity and the nomralization constrain
         Arguments:
         energy[nn.Module]: [the energy functional]
@@ -375,75 +323,12 @@ class GradientDescentDiagnostic:
             phi[pt.tensor]: [the wavefunction evaluated after the step]
         """
 
-        # provisional change
-        eng, _, _, n = energy(z)
-        eng.backward(pt.ones_like(eng))
-
-        with pt.no_grad():
-            grad = z.grad
-            z -= self.lr * (grad)
-            z.grad.zero_()
-        return (
-            eng.clone().detach(),
-            z,
-            n.detach().cpu().numpy(),
-        )
-
-    def _step(self, energy: nn.Module, z: pt.Tensor) -> tuple:
-        """This routine computes the step of the gradient using both the positivity and the nomralization constrain
-        Arguments:
-        energy[nn.Module]: [the energy functional]
-        phi[pt.tensor]: [the sqrt of the density profile]
-
-        Returns:
-            eng[pt.tensor]: [the energy value computed before the step]
-            phi[pt.tensor]: [the wavefunction evaluated after the step]
-        """
-
-        _, eng, n = energy.soft_constrain(z)
-        eng.backward(pt.ones_like(eng))
-
-        with pt.no_grad():
-            grad = z.grad
-            z -= self.lr * (grad)
-            z.grad.zero_()
-        return (
-            eng.clone().detach(),
-            z,
-            n.detach().cpu().numpy(),
-        )
-
-    def _step_hard(self, energy: nn.Module, z: pt.Tensor) -> tuple:
-        """This routine computes the step of the gradient using both the positivity and the nomralization constrain
-        Arguments:
-        energy[nn.Module]: [the energy functional]
-        phi[pt.tensor]: [the sqrt of the density profile]
-
-        Returns:
-            eng[pt.tensor]: [the energy value computed before the step]
-            phi[pt.tensor]: [the wavefunction evaluated after the step]
-        """
-
-        eng, norm, n = energy(z)
+        eng, n = energy(z, v=v)
         eng.backward(pt.ones_like(eng), retain_graph=True)
-
         with pt.no_grad():
             grad_e = z.grad.clone()
+            z -= self.lr * (grad_e)
             z.grad.zero_()
-
-        norm.backward(pt.ones_like(norm))
-
-        with pt.no_grad():
-            grad_n = z.grad.clone()
-            z.grad.zero_()
-
-            # chemical potential with the low grad_e
-            # approximation
-            mu = pt.einsum("ai,ai->a", grad_n, grad_e) / pt.einsum(
-                "ai,ai->a", grad_n, grad_n
-            )
-            z -= self.lr * (grad_e - mu[:, None] * grad_n)
-
         return (
             eng.clone().detach(),
             z,
@@ -525,41 +410,40 @@ class GradientDescentDiagnostic:
         # save the numpy values
         if idx != 0:
             np.savez(
-                "gradient_descent_ensamble_numpy/min_vs_gs_gradient_descent_"
-                + session_name,
+                "data/gradient_descent_data/" + session_name + "_energy",
                 min_energy=self.min_engs[epoch],
                 gs_energy=self.e_target[0 : (self.min_engs[epoch].shape[0])],
             )
             np.savez(
-                "gradient_descent_ensamble_numpy/min_density_" + session_name,
+                "data/gradient_descent_data/" + session_name + "_density",
                 min_density=self.min_ns[epoch],
                 gs_density=self.n_target[0 : self.min_ns[epoch].shape[0]],
                 z=self.min_z[epoch],
             )
 
 
-#%%
+# %%
 # important instances == 12,
-idx_instance = 1
+idx_instance = 0
 n_instances = 1
-loglr = -1
-cut = 128
+loglr = -3
+
 logdiffsoglia = -2
 n_ensambles = 1
-target_path = "data/dataset_meyer/dataset_meyer_test_256_100.npz"
-# target_path='data/final_dataset/data_test.npz'
-model_name = (
-    "meyer_case/cnn_softplus_for_gaussian_231222_60_hc_13_ks_2_ps_16_ls_0.001_vb"
+target_path = (
+    "data/dataset_meyer/dataset_meyer_test_256_15k_a_1-10_b_04-06_c_003-01.npz"
 )
+# target_path='data/final_dataset/data_test.npz'
+model_name = "meyer_case/test_meyer_60_hc_13_ks_2_ps_[40, 40, 40, 40, 40]_hidden_neurons_8_ls_0.0_alpha_0.001_vb"
 # model_name = "meyer_case/cnn_softplus_for_gaussian_test_5_60_hc_13_ks_2_ps_5_ls_0.1_vb"
 # model_name='speckle_case/normMSE_60_hc_13_ks_2_ps_16_ls_1e-06_vb'
-epochs = 20000
+epochs = 300000
 variable_lr = False
 final_lr = 10
 early_stopping = False
 L = 1
 resolution = 256
-latent_dimension = 16
+latent_dimension = 8
 seed = 42
 num_threads = 10
 device = "cpu"
@@ -569,10 +453,8 @@ init_path = "data/dataset_meyer/dataset_meyer_test_256_15k_a_1-10_b_04-06_c_003-
 
 
 gd = GradientDescentDiagnostic(
-    idx_instance=idx_instance,
     n_instances=n_instances,
     loglr=loglr,
-    cut=128,
     logdiffsoglia=logdiffsoglia,
     n_ensambles=n_ensambles,
     target_path=target_path,
@@ -581,20 +463,20 @@ gd = GradientDescentDiagnostic(
     variable_lr=variable_lr,
     final_lr=final_lr,
     early_stopping=early_stopping,
+    Energy=Energy,
     L=L,
     resolution=resolution,
     latent_dimension=latent_dimension,
     seed=seed,
     num_threads=num_threads,
     device=device,
-    mu=mu,
     init_path=init_path,
-    eps_value=10 ** -15,
+    dimension="1D",
 )
 
-#%%
+# %%
 
-history = gd.run()
+z, n_z, eng = gd.run()
 # %%
 start = 1000
 stop = -1
@@ -604,19 +486,6 @@ plt.plot((gd.history_f[start:stop]), label="f")
 # plt.plot(gd.history_density[start:stop],label='n')
 plt.axhline(0.0, color="red")
 plt.legend(fontsize=20)
-plt.show()
-
-# %%
-plt.plot(gd.history_z_module[start:stop], label="f")
-plt.legend(fontsize=20)
-plt.show()
-# %% component variation of z
-history_z = np.asarray(gd.history_z)
-print(history_z.shape)
-for i in range(latent_dimension):
-    plt.plot(history_z[:, i], label=f"idx_z={i}")
-    # plt.loglog()
-    # plt.legend(fontsize=20)
 plt.show()
 
 
@@ -642,14 +511,15 @@ x_recon = model.Decoder(z_exact).detach().numpy().reshape(-1)
 z_exact = z_exact[0].detach().numpy()
 print(z_exact.shape)
 
-plt.plot(gd.n_target[idx_instance])
-plt.plot(x_recon)
+plt.plot(gd.n_target[0])
+plt.plot(n_z[0])
 plt.show()
 
+# %%
 v = np.load(target_path)["potential"]
 v = pt.tensor(v, dtype=pt.double)
 
-energy = Energy(model, v[idx_instance], dx, mu=0)
+energy = Energy(model, dx, dimension="1D")
 
 z = pt.zeros((res, res, 2), dtype=pt.double)
 for i in trange(res):
@@ -663,7 +533,14 @@ nbatch = int(z.shape[0] / batch)
 
 for i in trange(nbatch):
     if i == 0:
-        eng_imshow = energy(z[i * batch : (i + 1) * batch])[0].detach().numpy()
+        eng_imshow = (
+            energy(
+                z[i * batch : (i + 1) * batch],
+                v[idx_instance][i * batch : (i + 1) * batch],
+            )[0]
+            .detach()
+            .numpy()
+        )
     else:
         eng_imshow = np.append(
             eng_imshow,
@@ -674,7 +551,7 @@ for i in trange(nbatch):
 eng_imshow = eng_imshow.reshape(res, res)
 
 
-#%% plot the surface
+# %% plot the surface
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.ticker import LinearLocator

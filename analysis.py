@@ -1,4 +1,4 @@
-#%%
+# %%
 from typing import List, Dict, Tuple
 import numpy as np
 import argparse
@@ -14,11 +14,13 @@ from torchmetrics import R2Score
 from src.model import Energy
 from src.utils_analysis import dataloader, test_models_dft, test_models_vae
 
-#%% Meyer study
+# %% Meyer study
 
 ls = 16
 n_test = 2
-model_name = f"3d_speckle/cnn_relu_for_3dspeckle_180123_60_hc_5_ks_2_ps_16_ls_1e-05_vb"
+model_name = (
+    f"3d_speckle/cnn_softplus_for_3dspeckle_271222_60_hc_5_ks_2_ps_16_ls_0.001_vb"
+)
 # model_name = "meyer_case/cnn_for_gaussian_60_hc_13_ks_2_ps_16_ls_1e-06_vb"
 # model_name=f"meyer_case/cnn_for_gaussian_test_5_60_hc_13_ks_2_ps_16_ls_0.1_vb"
 # model_name=f"meyer_case/cnn_for_gaussian_test_4_60_hc_13_ks_2_ps_16_ls_0.01_vb"
@@ -40,7 +42,7 @@ plt.show()
 
 plt.hist(e, bins=200)
 plt.show()
-#%%
+# %%
 # test the models
 dn, n_std, n_recons = test_models_vae(
     model_name=model_name,
@@ -57,7 +59,7 @@ r2, mae = test_models_dft(
 print(dn)
 print(r2, mae * 627)
 
-#%%
+# %%
 
 n_min, n_gs, _ = dataloader(
     "density",
@@ -82,11 +84,11 @@ e_min, e_gs = dataloader(
     n_ensambles=n_ensambles,
 )
 
-#%%
+# %%
 n_recons = n_recons.reshape(10, 18, 18, 18)
 print(n_std.shape)
 
-#%%
+# %%
 for i in range(n_recons.shape[1]):
     plt.imshow(n_recons[0, i] - n_std[0, i])
     plt.colorbar()
@@ -101,13 +103,12 @@ for i in range(n_recons.shape[1]):
     plt.show()
 
 
-#%%
+# %%
 print(np.sum(n_recons[0]) * (1.5 / 18) ** 3)
 
 
-#%%
+# %%
 for i in range(10):
-
     plt.plot(n_min[i])
     plt.plot(n_gs[i])
     plt.show()
@@ -147,7 +148,7 @@ plt.plot(n_min[4] - n_gs[4])
 plt.show()
 
 
-#%%
+# %%
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -158,7 +159,7 @@ n = data["density"]
 v = data["potential"]
 e = data["energy"]
 
-#%%
+# %%
 # print(f[0], e[0])
 
 # f_new = e - np.einsum("axyz,axyz->a", v, n) * (2 / 18) ** 3
