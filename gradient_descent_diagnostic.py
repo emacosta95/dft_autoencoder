@@ -426,15 +426,13 @@ class GradientDescentDiagnostic:
 # important instances == 12,
 idx_instance = 0
 n_instances = 1
-loglr = -3
+loglr = -1
 
 logdiffsoglia = -2
 n_ensambles = 1
-target_path = (
-    "data/dataset_meyer/dataset_meyer_test_256_15k_a_1-10_b_04-06_c_003-01.npz"
-)
+target_path = "data/dataset_meyer/dataset_meyer_test_256_100.npz"
 # target_path='data/final_dataset/data_test.npz'
-model_name = "meyer_case/test_meyer_60_hc_13_ks_2_ps_[40, 40, 40, 40, 40]_hidden_neurons_8_ls_0.0_alpha_0.001_vb"
+model_name = "meyer_case/DFTVAEnorm_hidden_channels_vae_[60, 60, 60, 60]_hidden_channels_dft_[60, 60, 60]_kernel_size_13_pooling_size_2_latent_dimension_8_l1_0.0_l2_0.001"
 # model_name = "meyer_case/cnn_softplus_for_gaussian_test_5_60_hc_13_ks_2_ps_5_ls_0.1_vb"
 # model_name='speckle_case/normMSE_60_hc_13_ks_2_ps_16_ls_1e-06_vb'
 epochs = 300000
@@ -448,7 +446,7 @@ seed = 42
 num_threads = 10
 device = "cpu"
 mu = 0
-init_path = "data/dataset_meyer/dataset_meyer_test_256_15k_a_1-10_b_04-06_c_003-01.npz"
+init_path = "data/dataset_meyer/dataset_meyer_test_256_100.npz"
 # init_path='data/final_dataset/data_train.npz'
 
 

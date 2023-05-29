@@ -227,8 +227,6 @@ def fit2ndGEN(
     wait = 0
 
     best_loss = 10**9
-    best_l1: float = 10**9
-    best_l2: float = 10**9
 
     # fix the kind of training that we want to implement
     model.freezing_parameters()
@@ -295,24 +293,13 @@ def fit2ndGEN(
             # for param in model.DFTModel.parameters():
             #     print(param.requires_grad, "\n")
 
-            if model.training_restriction == "generative":
-                condition = best_l2 >= l2tot / len(valid_dl)
-            elif model.training_restriction == "prediction":
-                condition = best_l1 >= l1tot / len(valid_dl)
-            else:
-                condition = (best_l2 >= l2tot / len(valid_dl)) and (
-                    best_l1 >= l1tot / len(valid_dl)
-                )
-
-            if condition:
+            if (l1tot / len(valid_dl) + l2tot / len(valid_dl)) <= best_loss:
                 print("Decreasing!")
                 torch.save(
                     model,
                     f"model_dft_pytorch/{name_checkpoint}",
                 )
-                best_loss = loss_ave_valid
-                best_l1 = l1tot / len(valid_dl)
-                best_l2 = l2tot / len(valid_dl)
+                best_loss = l1tot / len(valid_dl) + l2tot / len(valid_dl)
 
             torch.save(
                 history_train,
@@ -326,10 +313,7 @@ def fit2ndGEN(
             print(
                 f"loss_ave_train={loss_ave_train} \n"
                 f"loss_ave_valid={loss_ave_valid} \n"
-                f"l1={l1tot/len(valid_dl)} \n"
-                f"l2={l2tot/len(valid_dl)} \n"
-                f"best l1={best_l1} \n"
-                f"best l2={best_l2} \n"
+                f"best loss={best_loss} \n"
                 f"epochs={epoch}\n"
             )
 

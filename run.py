@@ -11,8 +11,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument(
     "--latent_dimension",
     type=int,
-    help="dimension of the latent space (default=16)",
-    default=16,
+    help="dimension of the latent space (default=8)",
+    default=8,
 )
 
 parser.add_argument(
@@ -66,28 +66,28 @@ parser.add_argument(
 parser.add_argument(
     "--target_path",
     type=str,
-    help="name of the target dataset (default='data/final_dataset/data_test.npz')",
-    default="data/final_dataset/data_test.npz",
+    help="name of the target dataset (default='data/dataset_meyer/dataset_meyer_test_256_100.npz')",
+    default="data/dataset_meyer/dataset_meyer_test_256_100.npz",
 )
 
 parser.add_argument(
     "--init_path",
     type=str,
-    help="dataset path for the initial configurations (default='data/final_dataset/data_train.npz')",
-    default="data/final_dataset/data_train.npz",
+    help="dataset path for the initial configurations (default='data/dataset_meyer/dataset_meyer_test_256_100.npz')",
+    default="data/dataset_meyer/dataset_meyer_test_256_100.npz",
 )
 
 parser.add_argument(
     "--model_name",
     type=str,
     help="name of model (default='emodel_20_hc_13_ks_2_ps_16_ls_0.001_vb')",
-    default="emodel_20_hc_13_ks_2_ps_16_ls_0.001_vb",
+    default="meyer_case/DFTVAEnorm_hidden_channels_vae_[60, 60, 60, 60, 60]_hidden_channels_dft_[60, 60, 60]_kernel_size_13_pooling_size_2_latent_dimension_8_l1_0.0_l2_0.001",
 )
 parser.add_argument(
     "--epochs", type=int, help="# of epochs (default=15001)", default=15001
 )
 
-parser.add_argument("--L", type=int, help="size of the system (default=14)", default=14)
+parser.add_argument("--L", type=int, help="size of the system (default=1)", default=1)
 parser.add_argument(
     "--resolution", type=int, help="resolution of the system (default=256)", default=256
 )
@@ -95,8 +95,8 @@ parser.add_argument(
 parser.add_argument(
     "--num_threads",
     type=int,
-    help="number of threads for the torch process (default=1)",
-    default=1,
+    help="number of threads for the torch process (default=10)",
+    default=10,
 )
 parser.add_argument(
     "--device",
@@ -115,6 +115,8 @@ parser.add_argument(
 args = parser.parse_args()
 
 print(args)
+
+torch.set_num_threads(args.num_threads)
 
 gd = GradientDescent(
     n_instances=args.n_instances,

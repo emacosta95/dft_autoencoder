@@ -257,38 +257,55 @@ class GradientDescent:
             if self.early_stopping:
                 self.lr[diff_eng < self.diffsoglia] = 0
 
-            if self.variable_lr:
-                self.lr = self.lr * self.ratio  # ONLY WITH FIXED EPOCHS
+            dn_t = np.sum(np.abs(n_old - n_z[0])) * (self.dx)
+
+            if dn_t <= self.lr * 10**-6:
+                self.lr = 0.0
+
+            n_old = n_z[0].copy()
+
+            # if self.variable_lr:
+            #    self.lr = self.lr * self.ratio  # ONLY WITH FIXED EPOCHS
 
             # Meyer's Early stopping
             # print(n_z.shape)
             dn = np.sum(np.abs(n_z[0] - self.n_target[idx])) * (self.dx)
 
-            if epoch == 0:
-                history = eng.detach().view(1, eng.shape[0])
-            elif epoch % 100 == 0:
-                history = pt.cat((history, eng.detach().view(1, eng.shape[0])), dim=0)
+            # if epoch == 0:
+            #     history = eng.detach().view(1, eng.shape[0])
+            # elif epoch % 100 == 0:
+            #     history = pt.cat((history, eng.detach().view(1, eng.shape[0])), dim=0)
 
             eng_old = eng.detach()
 
-            if epoch % 1000 == 0:
-                self.checkpoints(
-                    eng=eng,
-                    n_z=n_z,
-                    idx=idx,
-                    history=history,
-                    epoch=epoch,
-                    z=z,
-                )
+            # if epoch % 1000 == 0:
+            #     self.checkpoints(
+            #         eng=eng,
+            #         n_z=n_z,
+            #         idx=idx,
+            #         history=history,
+            #         epoch=epoch,
+            #         z=z,
+            #     )
 
             idxmin = pt.argmin(eng)
             f_ml = eng[idxmin].item() - np.sum(self.v_target[idx] * n_z[idxmin]) * (
                 self.dx
             )
             tqdm_bar.set_description(
-                f"df={f_ml-self.f_target[idx]:.5f} eng={(eng[idxmin]).item()-self.e_target[idx]:.5f},norm={np.sum(n_z[idxmin])*(self.dx):.5f}, dn={dn:.7f}"
+                f"df={f_ml-self.f_target[idx]:.5f} eng={(eng[idxmin]).item()-self.e_target[idx]:.5f}, dn={dn:.7f}, dn_t={dn_t:.9f}"
             )
             tqdm_bar.refresh()
+
+        # save the conf
+        self.checkpoints(
+            eng=eng,
+            n_z=n_z,
+            idx=idx,
+            history=history,
+            epoch=epoch,
+            z=z,
+        )
 
     def _step(self, energy: nn.Module, z: pt.Tensor, v: pt.Tensor) -> tuple:
         """This routine computes the step of the gradient using both the positivity and the nomralization constrain
