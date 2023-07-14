@@ -3,9 +3,9 @@ import torch
 from src.model_dft_autoencoder import DFTVAEnorm, DFTVAEnorm2ndGEN
 
 # the model trained with both DFT and VAE part
-model_name = "/meyer_case/DFTVAEnorm_hidden_channels_vae_[60, 60, 60, 60, 60]_hidden_channels_dft_[60, 60, 60]_kernel_size_13_pooling_size_2_latent_dimension_8_l1_0.0_l2_0.001"
+model_name = "/speckle_case/DFTVAEnorm_hidden_channels_vae_[60, 60, 60, 60, 60]_hidden_channels_dft_[60, 60, 60, 60, 60]_kernel_size_13_pooling_size_2_latent_dimension_16_l1_0.0_l2_1e-07"
 model = torch.load("model_dft_pytorch" + model_name, map_location="cpu")
-state_dict = model.Encoder.state_dict()
+state_dict = model.DFTModel.state_dict()
 print(model)
 # torch.save(
 #     state_dict,
@@ -19,10 +19,10 @@ print(model)
 # model2.Encoder.load_state_dict(state_dict)
 
 # %%
-model_name2 = "meyer_case/DFTVAEnorm_hidden_channels_vae_[60, 60, 60, 60, 60]_hidden_channels_dft_[60, 60, 60, 60, 60]_kernel_size_13_pooling_size_2_latent_dimension_8_l1_1.0_l2_0.001"
+model_name2 = "speckle_case/DFTVAEnorm_hidden_channels_vae_[60, 60, 60, 60, 60]_hidden_channels_dft_[60, 60, 60, 60, 60]_kernel_size_13_pooling_size_2_latent_dimension_16_l1_0.0_l2_0.001"
 model2 = torch.load("model_dft_pytorch/" + model_name2)
 print(model2)
-model2.Encoder.load_state_dict(state_dict)
+model2.DFTModel.load_state_dict(state_dict)
 
 torch.save(model2, "model_dft_pytorch/" + model_name2)
 

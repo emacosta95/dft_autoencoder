@@ -422,7 +422,6 @@ class GradientDescentDiagnostic:
             )
 
 
-# %%
 # important instances == 12,
 idx_instance = 0
 n_instances = 1
@@ -430,23 +429,23 @@ loglr = -1
 
 logdiffsoglia = -2
 n_ensambles = 1
-target_path = "data/dataset_meyer/dataset_meyer_test_256_100.npz"
+target_path = "data/final_dataset/data_train.npz"
 # target_path='data/final_dataset/data_test.npz'
-model_name = "meyer_case/DFTVAEnorm_hidden_channels_vae_[60, 60, 60, 60, 60]_hidden_channels_dft_[60, 60, 60, 60, 60]_kernel_size_13_pooling_size_2_latent_dimension_8_l1_1.0_l2_0.001"
+model_name = "speckle_case/DFTVAEnorm_hidden_channels_vae_[60, 60, 60, 60, 60]_hidden_channels_dft_[60, 60, 60, 60, 60]_kernel_size_13_pooling_size_2_latent_dimension_16_l1_0.0_l2_1e-07"
 # model_name = "meyer_case/cnn_softplus_for_gaussian_test_5_60_hc_13_ks_2_ps_5_ls_0.1_vb"
 # model_name='speckle_case/normMSE_60_hc_13_ks_2_ps_16_ls_1e-06_vb'
-epochs = 300000
+epochs = 30000
 variable_lr = False
 final_lr = 10
 early_stopping = False
-L = 1
+L = 14
 resolution = 256
 latent_dimension = 8
 seed = 42
 num_threads = 10
 device = "cpu"
 mu = 0
-init_path = "data/dataset_meyer/dataset_meyer_test_256_100.npz"
+init_path = "data/final_dataset/data_test.npz"
 # init_path='data/final_dataset/data_train.npz'
 
 
@@ -475,16 +474,6 @@ gd = GradientDescentDiagnostic(
 # %%
 
 z, n_z, eng = gd.run()
-# %%
-start = 1000
-stop = -1
-plt.plot(gd.history_energy[start:stop], label="e")
-plt.plot((gd.history_f[start:stop]), label="f")
-# plt.loglog()
-# plt.plot(gd.history_density[start:stop],label='n')
-plt.axhline(0.0, color="red")
-plt.legend(fontsize=20)
-plt.show()
 
 
 # %% Let's try to import weights from a model to another

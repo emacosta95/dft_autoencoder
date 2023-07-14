@@ -252,6 +252,12 @@ def main(args):
 
     kernel_size = args.kernel_size  # 13
 
+    if args.ModelType == "DFTVAEnorm3D":
+        kernel_size = [args.kernel_size for i in range(3)]
+        padding = [(args.kernel_size - 1) // 2 for i in range(3)]
+        input_size = [args.input_size for i in range(3)]
+        pooling_size = [args.pooling_size for i in range(3)]
+
     # Select the number of threads
     pt.set_num_threads(args.num_threads)
 
@@ -327,7 +333,7 @@ def main(args):
         # redefine the loss
         model.training_restriction = args.training_restriction
         # we should implement a getter for this
-        if args.ModelType == "DFTVAEnorm":
+        if args.ModelType == "DFTVAEnorm" or args.ModelType == "DFTVAEnorm3D":
             model.loss = loss[args.training_restriction]
     else:
         history_valid = []

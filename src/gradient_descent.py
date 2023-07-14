@@ -379,20 +379,20 @@ class GradientDescent:
         # exact_eng_min = exact_eng.clone()[idx_min].cpu()
 
         n_z_min = n_z[idx_min]
-        history_min = history[:, idx_min]
+        # history_min = history[:, idx_min]
         z_min = z[idx_min].detach().cpu().numpy()
 
         # exact_history_min = exact_history[idx_min]
         # append to the values
         if idx == 0:
             self.min_engs[epoch] = eng_min
-            self.min_hist[epoch] = history_min.cpu().numpy().reshape(1, -1)
+        #    self.min_hist[epoch] = history_min.cpu().numpy().reshape(1, -1)
 
         else:
             self.min_engs[epoch] = np.append(self.min_engs[epoch], eng_min)
-            self.min_hist[epoch] = np.append(
-                self.min_hist[epoch], history_min.cpu().numpy().reshape(1, -1)
-            )
+        #    self.min_hist[epoch] = np.append(
+        #        self.min_hist[epoch], history_min.cpu().numpy().reshape(1, -1)
+        #    )
 
         # self.min_exct_hist.append(exact_history_min)
 
@@ -405,12 +405,12 @@ class GradientDescent:
         # save the numpy values
         if idx != 0:
             np.savez(
-                "data/gradient_descent_data/" + session_name + "_energy",
+                "data/gradient_descent/" + session_name + "_energy",
                 min_energy=self.min_engs[epoch],
                 gs_energy=self.e_target[0 : (self.min_engs[epoch].shape[0])],
             )
             np.savez(
-                "data/gradient_descent_data/" + session_name + "_density",
+                "data/gradient_descent/" + session_name + "_density",
                 min_density=self.min_ns[epoch],
                 gs_density=self.n_target[0 : self.min_ns[epoch].shape[0]],
                 z=self.min_z[epoch],

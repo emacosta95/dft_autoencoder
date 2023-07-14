@@ -143,6 +143,78 @@ class DFTModel(nn.Module):
         return x
 
 
+class DFTModel3D(nn.Module):
+    def __init__(
+        self,
+        input_size: List,
+        input_channel: int,
+        hidden_channel: List,
+        output_size: int,
+        kernel_size: Tuple,
+        padding: List,
+        padding_mode: str,
+        pooling_size: Tuple,
+        activation: torch.nn.Module,
+    ):
+        super().__init__()
+
+        self.conv_list = nn.ModuleList([])
+
+        self.conv_list.add_module(
+            "block_0",
+            nn.Sequential(
+                nn.Conv3d(
+                    in_channels=input_channel,
+                    out_channels=hidden_channel[0],
+                    kernel_size=kernel_size,
+                    stride=1,
+                    padding=padding,
+                    padding_mode=padding_mode,
+                ),
+                nn.Softplus(),
+                nn.AvgPool3d(kernel_size=pooling_size),
+            ),
+        )
+
+        for i in range(len(hidden_channel) - 1):
+            self.conv_list.add_module(
+                f"block_{i+1}",
+                nn.Sequential(
+                    nn.Conv3d(
+                        in_channels=hidden_channel[i],
+                        out_channels=hidden_channel[i + 1],
+                        kernel_size=kernel_size,
+                        stride=1,
+                        padding=padding,
+                        padding_mode=padding_mode,
+                    ),
+                    nn.Softplus(),
+                    nn.AvgPool3d(kernel_size=pooling_size),
+                ),
+            )
+
+        self.flat = nn.Flatten()
+
+        self.final_dense = nn.Sequential(
+            nn.Linear(
+                hidden_channel[-1]
+                * int(
+                    (input_size[0] // pooling_size[0] ** len(hidden_channel))
+                    * (input_size[1] // pooling_size[1] ** len(hidden_channel))
+                    * (input_size[2] // pooling_size[2] ** len(hidden_channel))
+                ),
+                output_size,
+            )
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        for conv in self.conv_list:
+            x = conv(x)
+        x = self.flat(x)
+        x = self.final_dense(x)
+        return x
+
+
 class Pilati_model_3d_3_layer(nn.Module):
     def __init__(
         self,
