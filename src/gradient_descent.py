@@ -22,7 +22,16 @@ def norm_check_ND(x: pt.Tensor, dx: float, dimension: "str") -> float:
     elif dimension == "2D":
         return pt.abs(pt.sum(x, dim=(1, 2)) * (dx) ** 2 - 1)
     elif dimension == "3D":
-        return pt.abs(pt.sum(x, dim=(1, 2, 3)) * (dx) ** 3 - 1)
+        return pt.abs(pt.sum(x, dim=(-1, -2, -3)) * (dx) ** 3 - 1)
+
+
+def compute_the_norm(x: pt.Tensor, dx: float, dimension: str) -> float:
+    if dimension == "1D":
+        return np.abs(np.sum(x, axis=(1)) * (dx) ** 1)
+    elif dimension == "2D":
+        return np.abs(np.sum(x, axis=(1, 2)) * (dx) ** 2)
+    elif dimension == "3D":
+        return np.abs(np.sum(x, axis=(-1, -2, -3)) * (dx) ** 3)
 
 
 # %% THE GRADIENT DESCENT CLASS
@@ -207,6 +216,7 @@ class GradientDescent:
             z.requires_grad_(True)
 
             n_z = model.proposal(z)
+            print(n_z)
             norm = norm_check_ND(n_z, self.dx, dimension=self.dimension)
             norm_check = pt.max(norm)
             print(norm_check)
@@ -269,7 +279,10 @@ class GradientDescent:
 
             # Meyer's Early stopping
             # print(n_z.shape)
-            dn = np.sum(np.abs(n_z[0] - self.n_target[idx])) * (self.dx)
+
+            dn = compute_the_norm(
+                np.abs(n_z[0] - self.n_target[idx]), self.dx, dimension=self.dimension
+            )
 
             # if epoch == 0:
             #     history = eng.detach().view(1, eng.shape[0])
@@ -289,11 +302,9 @@ class GradientDescent:
             #     )
 
             idxmin = pt.argmin(eng)
-            f_ml = eng[idxmin].item() - np.sum(self.v_target[idx] * n_z[idxmin]) * (
-                self.dx
-            )
+
             tqdm_bar.set_description(
-                f"df={f_ml-self.f_target[idx]:.5f} eng={(eng[idxmin]).item()-self.e_target[idx]:.5f}, dn={dn:.7f}, dn_t={dn_t:.9f}"
+                f" eng={(eng[idxmin]).item()-self.e_target[idx]:.5f}, dn={dn:.7f}, dn_t={dn_t:.9f}"
             )
             tqdm_bar.refresh()
 

@@ -12,7 +12,7 @@ from scipy import fft, ifft
 import random
 from torch.distributions.normal import Normal
 from src.training.utils import initial_ensamble_random
-from src.gradient_descent import norm_check_ND
+from src.gradient_descent import norm_check_ND, compute_the_norm
 
 device = pt.device("cuda" if pt.cuda.is_available() else "cpu")
 
@@ -223,7 +223,7 @@ class GradientDescentDiagnostic:
             z.requires_grad_(True)
 
             n_z = model.proposal(z)
-            norm = norm_check_ND(n_z, self.dx, dimension=self.dimension)
+            norm = norm_check_ND((n_z), self.dx, dimension=self.dimension)
             norm_check = pt.max(norm)
             print(norm_check)
 
@@ -277,7 +277,11 @@ class GradientDescentDiagnostic:
 
             # Meyer's Early stopping
             # print(n_z.shape)
-            dn = np.sum(np.abs(n_z[0] - self.n_target[idx])) * (self.dx)
+            dn = compute_the_norm(
+                (np.abs(n_z[0] - self.n_target[idx])),
+                dx=self.dx,
+                dimension="3D",
+            )
 
             if epoch == 0:
                 history = eng.detach().view(1, eng.shape[0])
@@ -302,11 +306,13 @@ class GradientDescentDiagnostic:
                 )
 
             idxmin = pt.argmin(eng)
-            f_ml = eng[idxmin].item() - np.sum(self.v_target[idx] * n_z[idxmin]) * (
-                self.dx
+            f_ml = eng[idxmin].item() - compute_the_norm(
+                (self.v_target[idx] * n_z[idxmin]),
+                dx=self.dx,
+                dimension="3D",
             )
             tqdm_bar.set_description(
-                f"df={f_ml-self.f_target[idx]:.5f} eng={(eng[idxmin]).item()-self.e_target[idx]:.5f},norm={np.sum(n_z[idxmin])*(self.dx):.5f}, dn={dn:.7f} dn_t={dn_t:.9f}"
+                f"df={f_ml-self.f_target[idx]:.5f} eng={(eng[idxmin]).item()-self.e_target[idx]:.5f},norm={compute_the_norm((n_z[idxmin]),dx=self.dx,dimension='3D'):.5f}, dn={dn:.7f} dn_t={dn_t:.9f}"
             )
             tqdm_bar.refresh()
 
@@ -425,27 +431,27 @@ class GradientDescentDiagnostic:
 # important instances == 12,
 idx_instance = 0
 n_instances = 1
-loglr = -1
+loglr = 0
 
 logdiffsoglia = -2
 n_ensambles = 1
-target_path = "data/final_dataset/data_train.npz"
+target_path = "data/dataset_speckle_3d/test.npz"
 # target_path='data/final_dataset/data_test.npz'
-model_name = "speckle_case/DFTVAEnorm_hidden_channels_vae_[60, 60, 60, 60, 60]_hidden_channels_dft_[60, 60, 60, 60, 60]_kernel_size_13_pooling_size_2_latent_dimension_16_l1_0.0_l2_1e-07"
+model_name = "3d_speckle/model_test"
 # model_name = "meyer_case/cnn_softplus_for_gaussian_test_5_60_hc_13_ks_2_ps_5_ls_0.1_vb"
 # model_name='speckle_case/normMSE_60_hc_13_ks_2_ps_16_ls_1e-06_vb'
 epochs = 30000
 variable_lr = False
 final_lr = 10
 early_stopping = False
-L = 14
-resolution = 256
-latent_dimension = 8
+L = 2
+resolution = 18
+latent_dimension = 32
 seed = 42
 num_threads = 10
 device = "cpu"
 mu = 0
-init_path = "data/final_dataset/data_test.npz"
+init_path = "data/dataset_speckle_3d/test.npz"
 # init_path='data/final_dataset/data_train.npz'
 
 
@@ -468,7 +474,7 @@ gd = GradientDescentDiagnostic(
     num_threads=num_threads,
     device=device,
     init_path=init_path,
-    dimension="1D",
+    dimension="3D",
 )
 
 # %%

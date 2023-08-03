@@ -229,6 +229,13 @@ model_parser.add_argument(
     default="meyer_case/",
 )
 
+model_parser.add_argument(
+    "--other_information",
+    type=str,
+    help="other comments about either the training or the neural network ('')",
+    default="",
+)
+
 
 # pooling_size_dft=args.pooling_size_dft,
 # kernel_size_dft=args.kernel_size_dft,
@@ -282,7 +289,9 @@ def main(args):
     # Set the model name
     name_loss_parameter2 = f"l2_{args.loss_parameter2}"
     name_loss_parameter1 = f"l1_{args.loss_parameter1}_"
-    training_description = name_loss_parameter1 + name_loss_parameter2
+    training_description = (
+        name_loss_parameter1 + name_loss_parameter2 + args.other_information
+    )
 
     model_directory = args.model_directory
 

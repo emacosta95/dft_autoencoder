@@ -172,6 +172,16 @@ class DFTModel3D(nn.Module):
                     padding_mode=padding_mode,
                 ),
                 nn.Softplus(),
+                nn.BatchNorm3d(hidden_channel[0]),
+                # nn.Conv3d(
+                #     in_channels=hidden_channel[0],
+                #     out_channels=hidden_channel[0],
+                #     kernel_size=kernel_size,
+                #     stride=1,
+                #     padding=padding,
+                #     padding_mode=padding_mode,
+                # ),
+                # nn.Softplus(),
                 nn.AvgPool3d(kernel_size=pooling_size),
             ),
         )
@@ -189,6 +199,16 @@ class DFTModel3D(nn.Module):
                         padding_mode=padding_mode,
                     ),
                     nn.Softplus(),
+                    nn.BatchNorm3d(hidden_channel[0]),
+                    # # nn.Conv3d(
+                    # #     in_channels=hidden_channel[i + 1],
+                    # #     out_channels=hidden_channel[i + 1],
+                    # #     kernel_size=kernel_size,
+                    # #     stride=1,
+                    # #     padding=padding,
+                    # #     padding_mode=padding_mode,
+                    # # ),
+                    # # nn.Softplus(),
                     nn.AvgPool3d(kernel_size=pooling_size),
                 ),
             )

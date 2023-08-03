@@ -242,12 +242,12 @@ class DFTVAEnorm3D(nn.Module):
     def forward(self, z: torch.Tensor):
         x = self.Decoder(z)
         f = self.DFTModel(x)
-        x = x.view(x.shape[0], -1)
+        x = x.squeeze(1)
         return x, f
 
     def proposal(self, z: torch.Tensor):
         x = self.Decoder(z)
-        x = x.view(x.shape[0], -1)
+        x = x.squeeze(1)
         return x
 
     def functional(self, x: torch.Tensor):
