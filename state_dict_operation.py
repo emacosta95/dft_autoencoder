@@ -19,7 +19,7 @@ print(model)
 # model2.Decoder.load_state_dict(state_dict)
 
 # %%
-model_name2 = "3d_speckle/model_test"
+model_name2 = "3d_speckle/DFTVAEnorm3D_hidden_channels_vae_[60, 60, 60]_hidden_channels_dft_[60, 60, 60, 60]_kernel_size_[3, 3, 3]_pooling_size_[2, 2, 2]_latent_dimension_48_l1_0.0_l2_1e-07_36k"
 model2 = torch.load("model_dft_pytorch/" + model_name2, map_location="cpu")
 print(model2)
 model2.DFTModel.load_state_dict(state_dict)

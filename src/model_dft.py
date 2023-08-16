@@ -199,7 +199,7 @@ class DFTModel3D(nn.Module):
                         padding_mode=padding_mode,
                     ),
                     nn.Softplus(),
-                    nn.BatchNorm3d(hidden_channel[0]),
+                    nn.BatchNorm3d(hidden_channel[i]),
                     # # nn.Conv3d(
                     # #     in_channels=hidden_channel[i + 1],
                     # #     out_channels=hidden_channel[i + 1],
