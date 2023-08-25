@@ -431,13 +431,13 @@ class GradientDescentDiagnostic:
 # important instances == 12,
 idx_instance = 0
 n_instances = 1
-loglr = 0
+loglr = -1
 
 logdiffsoglia = -2
 n_ensambles = 1
 target_path = "data/dataset_speckle_3d/test.npz"
 # target_path='data/final_dataset/data_test.npz'
-model_name = "3d_speckle/DFTVAEnorm3D_hidden_channels_vae_[60, 60, 60]_hidden_channels_dft_[60, 60, 60, 60]_kernel_size_[3, 3, 3]_pooling_size_[2, 2, 2]_latent_dimension_48_l1_0.0_l2_1e-07_36k"
+model_name = "3d_speckle/DFTVAEnorm3D_hidden_channels_vae_[60, 60, 60]_hidden_channels_dft_[60, 80, 120, 180]_kernel_size_[3, 3, 3]_pooling_size_[2, 2, 2]_latent_dimension_32_l1_1.0_l2_1e-05_72k"
 # model_name = "meyer_case/cnn_softplus_for_gaussian_test_5_60_hc_13_ks_2_ps_5_ls_0.1_vb"
 # model_name='speckle_case/normMSE_60_hc_13_ks_2_ps_16_ls_1e-06_vb'
 epochs = 30000
