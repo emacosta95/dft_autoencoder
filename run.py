@@ -7,7 +7,7 @@ from src.training.utils import from_txt_to_bool
 from src.model import Energy
 
 # %% Data
-model_name = "3d_speckle/DFTVAEnorm3D_hidden_channels_vae_[60, 60, 60]_hidden_channels_dft_[60, 60, 60, 60]_kernel_size_[3, 3, 3]_pooling_size_[2, 2, 2]_latent_dimension_32_l1_0.0_l2_1e-07_36k"
+model_name = "3d_speckle/DFTVAEnorm3D_hidden_channels_vae_[60, 60, 60]_hidden_channels_dft_[60, 60, 60, 60]_kernel_size_[3, 3, 3]_pooling_size_[2, 2, 2]_latent_dimension_32_l1_1.0_l2_0.001_36k"
 latent_dimension = 16
 
 # %% N threads
@@ -15,7 +15,7 @@ latent_dimension = 16
 
 gd = GradientDescent(
     n_instances=100,
-    loglr=0,
+    loglr=-1,
     logdiffsoglia=100,
     n_ensambles=1,
     target_path="data/dataset_speckle_3d/test.npz",
