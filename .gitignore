@@ -4,6 +4,7 @@
 model_dft_pytorch/
 # Data
 *.txt
+!requirements.txt
 *.npz
 *.npy
 data/

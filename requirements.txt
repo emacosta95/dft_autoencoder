@@ -1,0 +1,4 @@
+#core
+pytorch-lightning
+#formatting
+black
