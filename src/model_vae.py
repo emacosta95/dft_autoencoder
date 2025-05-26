@@ -185,6 +185,108 @@ class Encode3D(nn.Module):
         x_logstd = self.final_logsigma(x)
         return x_mu, x_logstd
 
+class Encoder2D(nn.Module):
+    def __init__(
+        self,
+        input_channels: int,
+        input_size: List,
+        hidden_channels: List,
+        latent_dimension: int,
+        padding: List,
+        kernel_size: List,
+        pooling_size: List,
+        activation: str,
+    ):
+        """Encoder Block for 2D images
+
+        Args:
+            input_channels (int): number of channels of input data
+            input_size (List): dimension of the input data
+            hidden_channels (List): list of hidden channels layers
+            latent_dimension (int): dimension of the latent space
+            padding (List): list of padding for each hidden layer
+            kernel_size (List): list of the dimension of each kernel size (per hidden layer)
+            pooling_size (List): list of the dimension of each pooling size (per hidden layer)
+            activation (str): activation function
+        """
+        super().__init__()
+
+        activation = getattr(torch.nn, activation)()
+        self.conv_list = nn.ModuleList([])
+
+        self.conv_list.add_module(
+            "block_0",
+            nn.Sequential(
+                # nn.BatchNorm1d(input_channels),
+                nn.Conv2d(
+                    in_channels=input_channels,
+                    out_channels=hidden_channels[0],
+                    kernel_size=kernel_size,
+                    padding=padding,
+                    padding_mode="zeros",
+                ),
+                activation,
+                nn.AvgPool2d(kernel_size=pooling_size),
+                nn.BatchNorm2d(hidden_channels[0]),
+            ),
+        )
+
+        for i in range(len(hidden_channels) - 1):
+            self.conv_list.add_module(
+                f"block_{i+1}",
+                nn.Sequential(
+                    # nn.BatchNorm1d(input_channels),
+                    nn.Conv2d(
+                        in_channels=hidden_channels[i],
+                        out_channels=hidden_channels[i + 1],
+                        kernel_size=kernel_size,
+                        padding=padding,
+                        padding_mode="zeros",
+                    ),
+                    activation,
+                    nn.AvgPool2d(kernel_size=pooling_size),
+                    nn.BatchNorm2d(hidden_channels[i + 1]),
+                ),
+            )
+
+        self.final_mu = nn.Sequential(
+            nn.Linear(
+                hidden_channels[-1]
+                * int(
+                    (input_size[0] // (pooling_size[0] ** len(hidden_channels)))
+                    * (input_size[1] // (pooling_size[1] ** len(hidden_channels)))
+                ),
+                100,
+            ),
+            activation,
+            nn.Linear(100, 50),
+            activation,
+            nn.Linear(50, latent_dimension),
+        )
+        self.final_logsigma = nn.Sequential(
+            nn.Linear(
+                hidden_channels[-1]
+                * int(
+                    (input_size[0] // (pooling_size[0] ** len(hidden_channels)))
+                    * (input_size[1] // (pooling_size[1] ** len(hidden_channels)))
+                ),
+                100,
+            ),
+            activation,
+            nn.Linear(100, 50),
+            activation,
+            nn.Linear(50, latent_dimension),
+        )
+
+    def forward(self, x: torch.Tensor) -> Tuple:
+        for conv in self.conv_list:
+            x = conv(x)
+        x = x.view(x.shape[0], -1)
+
+        x_mu = self.final_mu(x)
+        x_logstd = self.final_logsigma(x)
+        return x_mu, x_logstd
+
 
 class Encode3db(nn.Module):
     def __init__(
@@ -483,6 +585,134 @@ class DecodeNorm3D(nn.Module):
         return x
 
 
+
+class Decoder2D(nn.Module):
+    def __init__(
+        self,
+        latent_dimension: int,
+        hidden_channels: List,
+        output_channels: int,
+        output_size: List,
+        padding: List,
+        kernel_size: List,
+        pooling_size: int,
+        activation: str,
+
+    ):
+        """Decoder Block for 2D images
+
+        Args:
+            input_channels (int): number of channels of input data
+            input_size (List): dimension of the input data
+            hidden_channels (List): list of hidden channels layers
+            latent_dimension (int): dimension of the latent space
+            padding (List): list of padding for each hidden layer
+            kernel_size (List): list of the dimension of each kernel size (per hidden layer)
+            pooling_size (List): list of the dimension of each pooling size (per hidden layer)
+            activation (str): activation function
+        """
+        
+        
+        super().__init__()
+
+        activation = getattr(torch.nn, activation)()
+
+        self.output_size = output_size
+        self.pooling_size = pooling_size
+
+        self.recon_block = nn.Sequential(
+            nn.Linear(
+                latent_dimension,
+                int(
+                    (output_size[0] // (pooling_size[0]) ** len(hidden_channels))
+                    * (output_size[1] // (pooling_size[1]) ** len(hidden_channels))
+                )
+                * hidden_channels[0],
+            ),
+        )
+
+        self.conv_list = nn.ModuleList([])
+
+        self.adaptive_pooling = nn.AdaptiveAvgPool3d(output_size=output_size)
+
+        for i in range(len(hidden_channels) - 1):
+            if i == 0:
+                self.conv_list.add_module(
+                    f"block_{i}",
+                    nn.Sequential(
+                        nn.ConvTranspose2d(
+                            in_channels=hidden_channels[i],
+                            out_channels=hidden_channels[i + 1],
+                            kernel_size=[
+                                kernel_size[0] + 1,
+                                kernel_size[1] + 1,
+                            ],
+                            stride=2,
+                            padding=padding,
+                        ),
+                        activation,
+                        nn.BatchNorm2d(hidden_channels[i + 1]),
+                    ),
+                )
+            else:
+                self.conv_list.add_module(
+                    f"block_{i}",
+                    nn.Sequential(
+                        nn.ConvTranspose2d(
+                            in_channels=hidden_channels[i],
+                            out_channels=hidden_channels[i + 1],
+                            kernel_size=[
+                                kernel_size[0] + 1,
+                                kernel_size[1] + 1,
+                            ],
+                            stride=2,
+                            padding=padding,
+                        ),
+                        activation,
+                        nn.BatchNorm2d(hidden_channels[i + 1]),
+                    ),
+                )
+
+        self.conv_list.add_module(
+            f"block_{i+1}",
+            nn.Sequential(
+                nn.ConvTranspose2d(
+                    in_channels=hidden_channels[-1],
+                    out_channels=output_channels,
+                    kernel_size=[
+                        kernel_size[0] + 1,
+                        kernel_size[1] + 1,
+                    ],
+                    stride=2,
+                    padding=padding,
+                ),
+            ),
+        )
+
+        self.hidden_channel = hidden_channels
+
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
+        x = self.recon_block(z)
+        x = x.view(
+            -1,
+            self.hidden_channel[0],
+            int(
+                self.output_size[0]
+                // (self.pooling_size[0] ** len(self.hidden_channel))
+            ),
+            int(
+                self.output_size[1]
+                // (self.pooling_size[1] ** len(self.hidden_channel))
+            ),
+        )
+        for conv in self.conv_list:
+            x = conv(x)
+        # positivity
+#        x = torch.sigmoid(x)
+        x = self.adaptive_pooling(x)
+        return x
+
+
 class VarAE(nn.Module):
     def __init__(
         self,
@@ -513,6 +743,55 @@ class VarAE(nn.Module):
             latent_dimension=latent_dimension,
             padding=padding,
             padding_mode=padding_mode,
+            kernel_size=kernel_size,
+        )
+
+    def forward(self, x):
+        latent_mu, latent_logvar = self.encoder(x)
+        latent = self.latent_sample(latent_mu, latent_logvar)
+        x_recon = self.decoder(latent)
+
+        return x_recon, latent_mu, latent_logvar
+
+    def latent_sample(self, mu, logvar):
+        if self.training:
+            # the reparameterization trick
+            std = (logvar * 0.5).exp()
+            return torch.distributions.Normal(loc=mu, scale=std).rsample()
+            # std = logvar.mul(0.5).exp_()
+            # eps = torch.empty_like(std).normal_()
+            # return eps.mul(std).add_(mu)
+        else:
+            return mu
+
+
+class VarAE2D(nn.Module):
+    def __init__(
+        self,
+        latent_dimension: int,
+        hidden_channel: int,
+        input_channels: int,
+        input_size: int,
+        padding: int,
+        kernel_size: int,
+    ):
+        super().__init__()
+
+        self.encoder = Encoder2D(
+            input_channels=input_channels,
+            input_size=input_size,
+            hidden_channel=hidden_channel,
+            latent_dimension=latent_dimension,
+            padding=padding,
+            kernel_size=kernel_size,
+        )
+
+        self.decoder = Decoder2D(
+            output_channels=input_channels,
+            output_size=input_size,
+            hidden_channel=hidden_channel,
+            latent_dimension=latent_dimension,
+            padding=padding,
             kernel_size=kernel_size,
         )
 
