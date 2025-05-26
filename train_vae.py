@@ -1,4 +1,3 @@
-from typing import List
 from pyexpat import model
 import random
 import torch
@@ -6,7 +5,7 @@ import numpy as np
 from torch.nn.modules import pooling
 from src.model_vae import VarAE2D
 from src.training.utils import (
-    make_data_loader,
+    compute_data_loader,
     get_optimizer,
     count_parameters,
     VaeLoss,
@@ -21,7 +20,7 @@ import os
 # parser arguments
 
 parser = argparse.ArgumentParser()
-
+subparsers = parser.add_subparsers()
 
 parser.add_argument("--load", type=bool, help="Loading or not the model", default=False)
 parser.add_argument("--name", type=str, help="name of the model", default=None)
@@ -29,8 +28,8 @@ parser.add_argument("--name", type=str, help="name of the model", default=None)
 parser.add_argument(
     "--data_path",
     type=str,
-    help="",
-    default="data/",
+    help="seed for pytorch and numpy (default=data/final_dataset/data_train.npz)",
+    default="data/dataset/data_train.npz",
 )
 
 parser.add_argument(
@@ -72,134 +71,94 @@ parser.add_argument(
 parser.add_argument(
     "--lr",
     type=float,
-    help="learning rate (default=0.001)",
-    default=0.001,
+    help="learning rate (default=0.0001)",
+    default=0.0001,
 )
 
 parser.add_argument(
     "--bs",
     type=int,
-    help="batch size (default=2000)",
-    default=2000,
+    help="batch size (default=100)",
+    default=100,
 )
 
 parser.add_argument(
     "--epochs",
     type=int,
-    help="training epochs (default=2000)",
-    default=2000,
+    help="training epochs (default=800)",
+    default=1200,
 )
 
+model_parser = subparsers.add_parser("model", help="model hparameters")
 
-
-parser.add_argument(
+model_parser.add_argument(
     "--input_channels",
     type=int,
     help="# channels of the input data (default=1)",
     default=1,
 )
-parser.add_argument(
+model_parser.add_argument(
     "--input_size",
-    nargs='+',
     type=int,
-    help="number of features of the input data (default=(16,16))",
-    default=(16,16),
+    help="number of features of the input data (default=256)",
+    default=256,
 )
 
-parser.add_argument(
+model_parser.add_argument(
     "--latent_dimension",
     type=int,
-    help="dimension of the latent manifold (default=6)",
-    default=6,
+    help="dimension of the latent manifold (default=16)",
+    default=16,
 )
 
-parser.add_argument(
+model_parser.add_argument(
     "--hidden_channels",
     type=int,
-    help="channels (or filters) of the hidden layers (default=20)",
+    help="channels (or filters) of the hidden layers (default=120)",
     default=20,
 )
 
-parser.add_argument(
+model_parser.add_argument(
     "--pooling_size",
     type=int,
-    help="pooling size in the Avg Pooling (default=1)",
-    default=1,
+    help="pooling size in the Avg Pooling (default=2)",
+    default=2,
 )
 
-parser.add_argument(
+model_parser.add_argument(
     "--padding",
-    nargs='+',
     type=int,
-    help="padding dimension (default=[1,0])",
-    default=[1,0],
-)
-
-parser.add_argument(
-    "--hidden_neurons",
-    nargs='+',
-    type=int,
-    help="number of hidden neurons per layer in the dense nn (default=[30,20,10])",
-    default=[30,20,10],
-)
-
-parser.add_argument(
-    "--dense",
-    type=str,
-    help="if True select the dense nn (default=False)",
-    default=False,
+    help="padding dimension (default=2)",
+    default=6,
 )
 
 
-parser.add_argument(
+model_parser.add_argument(
     "--kernel_size",
-    nargs='+',
     type=int,
-    help="kernel size (default=[3,1])",
-    default=[3,1],
+    help="kernel size (default=13)",
+    default=13,
 )
 
-parser.add_argument(
+model_parser.add_argument(
     "--padding_mode",
     type=str,
     help="the padding mode of the model (default='circular')",
     default="circular",
 )
 
-parser.add_argument(
+model_parser.add_argument(
     "--loss_parameter",
     type=float,
     help="the amplitude of the kldiv (default=0.001)",
     default=0.001,
 )
 
-parser.add_argument(
+model_parser.add_argument(
     "--model_name",
     type=str,
     help="name of the model (default='vae_model')",
     default="vae_model",
-)
-
-parser.add_argument(
-    "--ModelType",
-    type=str,
-    help="Type of the Model (default='VAETomography')",
-    default="VAETomography",
-)
-
-parser.add_argument(
-    "--nlayers",
-    type=int,
-    help="number of conv block (default=3)",
-    default=3,
-)
-
-
-parser.add_argument(
-    "--nconv",
-    type=int,
-    help="number of conv layers per block (default=3)",
-    default=3,
 )
 
 
@@ -219,68 +178,59 @@ def main(args):
     )
     torch.backends.cudnn.benchmark = False
 
-    hidden_neurons=args.hidden_neurons
-
     # Set the model name
-    if not(from_txt_to_bool(args.dense)):
-        model_name = args.model_name
-        name_hc = f"_{args.hidden_channels}_hc"
-        name_ks = f"_{args.kernel_size}_ks"
-        name_pooling_size = f"_{args.pooling_size}_ps"
-        name_latent_dimension = f"_{args.latent_dimension}_ls"
-        name_loss_parameter = f"_{args.loss_parameter}_vb"
-        model_name = (
-            model_name
-            + name_hc
-            + name_ks
-            + name_pooling_size
-            + name_latent_dimension
-            + name_loss_parameter
-        )
+    model_name = args.model_name
+    name_hc = f"_{args.hidden_channels}_hc"
+    name_ks = f"_{args.kernel_size}_ks"
+    name_pooling_size = f"_{args.pooling_size}_ps"
+    name_latent_dimension = f"_{args.latent_dimension}_ls"
+    name_loss_parameter = f"_{args.loss_parameter}_vb"
+    model_name = (
+        model_name
+        + name_hc
+        + name_ks
+        + name_pooling_size
+        + name_latent_dimension
+        + name_loss_parameter
+    )
 
-    else:
-        model_name=args.model_name
-        name_nlayers = f"_{len(hidden_neurons)}_nlayers"
-        name_hn = f"_{hidden_neurons}_hidden_neurons"
-        name_latent_dimension = f"_{args.latent_dimension}_ls"
-        name_loss_parameter = f"_{args.loss_parameter}_vb"
-        model_name = (
-            model_name
-            + name_nlayers
-            + name_hn
-            + name_latent_dimension
-            + name_loss_parameter
-        )
     # init the loss function
     loss_func = VaeLoss(variational_beta=args.loss_parameter)
 
     # loading the state dict
     if args.load:
         print(f"loading the model {args.name}")
-        model=torch.load('saved_models/'+args.name)
-        model=model.to(torch.double)
-        if os.path.isfile(f"loss/{args.name}" + "_loss_train"):
-            print('history loading confirmed!')
+        model = VarAE2D(
+            input_size=args.input_size,
+            latent_dimension=args.latent_dimension,
+            input_channels=args.input_channels,
+            hidden_channels=args.hidden_channels,
+            kernel_size=args.kernel_size,
+            padding=args.padding,
+            padding_mode=args.padding_mode,
+            pooling_size=args.pooling_size,
+        )
+        state_dict = torch.load(f"state_dict/{args.name}")
+        model.load_state_dict(state_dict)
+
+        if os.path.isfile(f"loss/{args.name}" + "_loss_valid"):
+            history_valid = torch.load(f"loss/{args.name}" + "_loss_valid")
             history_train = torch.load(f"loss/{args.name}" + "_loss_train")
-            history_valid=[]
     else:
 
         history_valid = []
         history_train = []
 
-        if args.ModelType=='VAE':
-            model = VarAE2D(
-                input_size=args.input_size,
-                latent_dimension=args.latent_dimension,
-                input_channels=args.input_channels,
-                hidden_channels=args.hidden_channels,
-                kernel_size=args.kernel_size,
-                padding=args.padding,
-                padding_mode=args.padding_mode,
-                pooling_size=args.pooling_size,
-            )
-        
-
+        model = VarAE2D(
+            input_size=args.input_size,
+            latent_dimension=args.latent_dimension,
+            input_channels=args.input_channels,
+            hidden_channels=args.hidden_channels,
+            kernel_size=args.kernel_size,
+            padding=args.padding,
+            padding_mode=args.padding_mode,
+            pooling_size=args.pooling_size,
+        )
 
     model = model.to(torch.double)
     model = model.to(device=args.device)
@@ -288,12 +238,11 @@ def main(args):
     print(model)
     print(count_parameters(model))
 
-    train_dl = make_data_loader(
+    train_dl, valid_dl = compute_data_loader(
         file_name=args.data_path,
         bs=args.bs,
         split=0.8,
         generative=True,
-        l=args.input_size[0]
     )
 
     opt = get_optimizer(lr=args.lr, model=model)
@@ -303,6 +252,7 @@ def main(args):
         train_dl=train_dl,
         opt=opt,
         epochs=args.epochs,
+        valid_dl=valid_dl,
         checkpoint=True,
         name_checkpoint=model_name,
         history_train=history_train,
